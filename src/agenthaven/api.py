@@ -1,18 +1,20 @@
+import os
+import re
 import shutil
 import sqlite3
+import tempfile
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from threading import Lock
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
-
-from threading import Lock
 from pydantic import BaseModel, Field
 
 from agenthaven.isolation.runner import (
-    execute_python,
     SandboxError,
+    execute_python,
 )
 
 app = FastAPI(
@@ -32,7 +34,7 @@ DATA_DIR = Path(__file__).resolve().parents[2] / ".runtime"
 
 
 def now():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @contextmanager
@@ -114,35 +116,6 @@ def inspect_sandbox(sandbox_id: UUID):
     return get_record(str(sandbox_id))
 
 
-@app.delete("/sandboxes/{sandbox_id}")
-def terminate_sandbox(sandbox_id: UUID):
-    sid = str(sandbox_id)
-    record = get_record(sid)
-
-    if record["status"] == "terminated":
-        return record
-
-    workspace = DATA_DIR / "sandboxes" / sid
-
-    if workspace.is_symlink():
-        raise HTTPException(409, "Unexpected workspace symlink")
-
-    if workspace.exists():
-        shutil.rmtree(workspace)
-
-    with database() as conn:
-        conn.execute(
-            """
-            UPDATE sandboxes
-            SET status = ?, terminated_at = ?
-            WHERE id = ?
-            """,
-            ("terminated", now(), sid),
-        )
-
-    return get_record(sid)
-
-
 @app.post("/sandboxes/{sandbox_id}/execute")
 def execute_sandbox(sandbox_id: UUID, request: ExecuteRequest):
     if request.language != "python":
@@ -214,3 +187,152 @@ def terminate_sandbox(sandbox_id: UUID):
             )
 
         return get_record(sid)
+
+
+# AgentHaven v0.3.1 — Text File Management
+
+MAX_FILE_BYTES = 64 * 1024
+
+# Flat filenames only. No directories, dotfiles or path traversal.
+FILE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$")
+
+
+class FileRequest(BaseModel):
+    content: str = Field(max_length=65536)
+
+
+def get_active_workspace(sandbox_id: UUID) -> Path:
+    sid = str(sandbox_id)
+    record = get_record(sid)
+
+    if record["status"] != "created":
+        raise HTTPException(409, "Sandbox is not active")
+
+    workspace = DATA_DIR / "sandboxes" / sid
+
+    if workspace.is_symlink() or not workspace.is_dir():
+        raise HTTPException(409, "Workspace unavailable")
+
+    return workspace
+
+
+def validate_filename(name: str) -> None:
+    if not FILE_NAME_PATTERN.fullmatch(name) or name.startswith("agenthaven_"):
+        raise HTTPException(400, "Invalid filename")
+
+
+@app.put("/sandboxes/{sandbox_id}/files/{filename}")
+def write_sandbox_file(
+    sandbox_id: UUID,
+    filename: str,
+    request: FileRequest,
+):
+    validate_filename(filename)
+
+    content = request.content.encode("utf-8")
+
+    if len(content) > MAX_FILE_BYTES:
+        raise HTTPException(413, "File exceeds 64 KB")
+
+    with EXECUTION_LOCK:
+        workspace = get_active_workspace(sandbox_id)
+        target = workspace / filename
+
+        if target.is_symlink():
+            raise HTTPException(409, "Symlink not permitted")
+
+        if target.exists() and not target.is_file():
+            raise HTTPException(409, "Not a regular file")
+
+        # Write to a new temporary file, then atomically replace.
+        temp_path = None
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="wb",
+                dir=workspace,
+                prefix=".agenthaven-upload-",
+                delete=False,
+            ) as tmp:
+                temp_path = tmp.name
+                tmp.write(content)
+
+            os.replace(temp_path, target)
+
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+        return {
+            "filename": filename,
+            "size_bytes": len(content),
+            "status": "saved",
+        }
+
+
+@app.get("/sandboxes/{sandbox_id}/files")
+def list_sandbox_files(sandbox_id: UUID):
+    with EXECUTION_LOCK:
+        workspace = get_active_workspace(sandbox_id)
+
+        files = []
+
+        for path in sorted(workspace.iterdir()):
+            if (
+                FILE_NAME_PATTERN.fullmatch(path.name)
+                and not path.name.startswith("agenthaven_")
+                and not path.is_symlink()
+                and path.is_file()
+            ):
+                files.append(
+                    {
+                        "filename": path.name,
+                        "size_bytes": path.stat().st_size,
+                    }
+                )
+
+        return {"files": files}
+
+
+@app.get("/sandboxes/{sandbox_id}/files/{filename}")
+def read_sandbox_file(sandbox_id: UUID, filename: str):
+    validate_filename(filename)
+
+    with EXECUTION_LOCK:
+        workspace = get_active_workspace(sandbox_id)
+        path = workspace / filename
+
+        if path.is_symlink() or not path.is_file():
+            raise HTTPException(404, "File not found")
+
+        if path.stat().st_size > MAX_FILE_BYTES:
+            raise HTTPException(413, "File exceeds 64 KB")
+
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(415, "Only UTF-8 text is supported")
+
+        return {
+            "filename": filename,
+            "content": content,
+        }
+
+
+@app.delete("/sandboxes/{sandbox_id}/files/{filename}")
+def delete_sandbox_file(sandbox_id: UUID, filename: str):
+    validate_filename(filename)
+
+    with EXECUTION_LOCK:
+        workspace = get_active_workspace(sandbox_id)
+        path = workspace / filename
+
+        if path.is_symlink() or not path.is_file():
+            raise HTTPException(404, "File not found")
+
+        path.unlink()
+
+        return {
+            "filename": filename,
+            "status": "deleted",
+        }
