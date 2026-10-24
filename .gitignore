@@ -218,3 +218,25 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AgentHaven runtime
+.runtime/
+.sandboxes/
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Go and Rust
+target/
+*.test
+
+# Local secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node
+node_modules/
