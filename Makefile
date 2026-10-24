@@ -130,3 +130,17 @@ reset-env: ## Recreate virtual environment
 		else \
 			echo "Cancelled."; \
 		fi
+
+agent-demo: ## Run OpenRouter agent with AgentHaven
+	$(PYTHON) examples/openrouter_agent.py
+
+metrics: ## Show last 24 hours of execution metrics
+	@curl -fsS "http://127.0.0.1:8000/observability/summary?hours=24" \
+		| $(PYTHON) -m json.tool
+
+metrics-recent: ## Show recent sandbox executions
+	@curl -fsS "http://127.0.0.1:8000/observability/executions?limit=20" \
+		| $(PYTHON) -m json.tool
+
+observability-tests: ## Run observability tests
+	$(UV) run pytest -v tests/test_observability.py

@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from agenthaven import observability
 
 from agenthaven.isolation.runner import SandboxError, execute_python
 
@@ -209,6 +210,9 @@ app = FastAPI(
     version="1.0.0-dev",
     lifespan=lifespan,
 )
+
+observability.configure(database)
+app.include_router(observability.router)
 
 
 class CreateRequest(BaseModel):
