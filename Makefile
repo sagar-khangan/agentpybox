@@ -110,3 +110,13 @@ sandbox-demo: ## Run the full execution lifecycle demo
 
 sandbox-tests: ## Run sandbox-related automated tests
 	$(UV) run pytest -v tests/
+
+file-tests: ## Run AgentHaven file API tests
+	$(UV) run pytest -v tests/test_files.py
+
+api-tests: ## Run all AgentHaven API tests
+	$(UV) run pytest -v tests/
+
+
+execution-tests: ## Run real Bubblewrap execution tests
+	$(UV) run pytest -v tests/test_sandbox_execution.py
