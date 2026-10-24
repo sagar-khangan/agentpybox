@@ -53,6 +53,24 @@ def database():
             )
         """
         )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS executions (
+                id TEXT PRIMARY KEY,
+                sandbox_id TEXT NOT NULL,
+                language TEXT NOT NULL,
+                exit_code INTEGER,
+                duration_ms REAL NOT NULL,
+                timed_out INTEGER NOT NULL DEFAULT 0,
+                truncated INTEGER NOT NULL DEFAULT 0,
+                executed_at TEXT NOT NULL,
+                FOREIGN KEY (sandbox_id)
+                    REFERENCES sandboxes(id)
+            )
+        """
+        )
+
         conn.commit()
         yield conn
         conn.commit()
@@ -152,7 +170,37 @@ def execute_sandbox(sandbox_id: UUID, request: ExecuteRequest):
                 detail=f"Sandbox execution unavailable: {exc}",
             )
 
+        execution_id = str(uuid4())
+
+        with database() as conn:
+            conn.execute(
+                """
+                INSERT INTO executions (
+                    id,
+                    sandbox_id,
+                    language,
+                    exit_code,
+                    duration_ms,
+                    timed_out,
+                    truncated,
+                    executed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    execution_id,
+                    sid,
+                    request.language,
+                    result["exit_code"],
+                    result["duration_ms"],
+                    int(result["timed_out"]),
+                    int(result["truncated"]),
+                    now(),
+                ),
+            )
+
         return {
+            "execution_id": execution_id,
             "sandbox_id": sid,
             "language": request.language,
             **result,
@@ -336,3 +384,53 @@ def delete_sandbox_file(sandbox_id: UUID, filename: str):
             "filename": filename,
             "status": "deleted",
         }
+
+
+@app.get("/sandboxes/{sandbox_id}/executions")
+def list_executions(sandbox_id: UUID):
+    sid = str(sandbox_id)
+
+    with EXECUTION_LOCK:
+        get_record(sid)
+
+        with database() as conn:
+            rows = conn.execute(
+                """
+                SELECT *
+                FROM executions
+                WHERE sandbox_id = ?
+                ORDER BY executed_at DESC
+                """,
+                (sid,),
+            ).fetchall()
+
+        return {
+            "sandbox_id": sid,
+            "executions": [dict(row) for row in rows],
+        }
+
+
+@app.get("/sandboxes/{sandbox_id}/executions/{execution_id}")
+def get_execution(sandbox_id: UUID, execution_id: UUID):
+    sid = str(sandbox_id)
+
+    with EXECUTION_LOCK:
+        get_record(sid)
+
+        with database() as conn:
+            row = conn.execute(
+                """
+                SELECT *
+                FROM executions
+                WHERE sandbox_id = ? AND id = ?
+                """,
+                (sid, str(execution_id)),
+            ).fetchone()
+
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Execution not found",
+            )
+
+        return dict(row)

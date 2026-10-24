@@ -120,3 +120,6 @@ api-tests: ## Run all AgentHaven API tests
 
 execution-tests: ## Run real Bubblewrap execution tests
 	$(UV) run pytest -v tests/test_sandbox_execution.py
+
+history-tests: ## Test SQLite execution history
+	$(UV) run pytest -v tests/test_execution_history.py
