@@ -100,7 +100,10 @@ def execute_python(workspace: Path, code: str) -> dict:
 
     try:
         # Temporary output files prevent unbounded pipe buffering.
-        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+        with (
+            tempfile.TemporaryFile() as stdout_file,
+            tempfile.TemporaryFile() as stderr_file,
+        ):
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,

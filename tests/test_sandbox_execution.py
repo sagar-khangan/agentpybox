@@ -60,7 +60,7 @@ class TestSandboxExecution:
         first = execute(
             client,
             sid,
-            "from pathlib import Path\n" "Path('hello.txt').write_text('persisted')",
+            "from pathlib import Path\nPath('hello.txt').write_text('persisted')",
         )
 
         assert first.json()["exit_code"] == 0
@@ -68,7 +68,7 @@ class TestSandboxExecution:
         second = execute(
             client,
             sid,
-            "from pathlib import Path\n" "print(Path('hello.txt').read_text())",
+            "from pathlib import Path\nprint(Path('hello.txt').read_text())",
         )
 
         assert second.json()["exit_code"] == 0
@@ -80,7 +80,7 @@ class TestSandboxExecution:
         result = execute(
             client,
             sid,
-            "from pathlib import Path\n" "print(Path('/home/ubuntu/.aws').exists())",
+            "from pathlib import Path\nprint(Path('/home/ubuntu/.aws').exists())",
         )
 
         assert result.json()["exit_code"] == 0

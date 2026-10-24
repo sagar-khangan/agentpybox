@@ -3,99 +3,63 @@
 
 UV := uv
 PYTHON := $(UV) run python
+
 HOST := 127.0.0.1
 PORT := 8000
 API := agenthaven.api:app
 
-.PHONY: help setup install dev run health test lint format check \
-        demo tree clean clean-cache clean-runtime reset-env status
+.PHONY: help setup install dev run health \
+        test lint format check \
+        demo sandbox-check sandbox-demo \
+        sandbox-tests execution-tests \
+        file-tests api-tests history-tests ttl-tests \
+        full-demo status tree \
+        clean clean-cache clean-runtime reset-env
 
-help: ## Show available commands
+help: ## Show all commands
 	@echo ""
-	@echo "AgentHaven - Development Commands"
-	@echo "---------------------------------"
+	@echo "AgentHaven Development Commands"
+	@echo "==============================="
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
-		awk 'BEGIN {FS = ":.*## "}; {printf "  %-18s %s\n", $$1, $$2}'
+		awk 'BEGIN {FS = ":.*## "}; {printf "  %-22s %s\n", $$1, $$2}'
 	@echo ""
 
-setup: ## Install Python 3.13 and project dependencies
+setup: ## Install Python 3.13 and dependencies
 	$(UV) python install 3.13
 	$(UV) sync
 
-install: ## Synchronize project dependencies
+install: ## Sync project dependencies
 	$(UV) sync
 
-dev: ## Start FastAPI with automatic reload
-	$(PYTHON) -m uvicorn $(API) --host $(HOST) --port $(PORT) --reload
+dev: ## Start development API with hot reload
+	$(PYTHON) -m uvicorn $(API) \
+		--host $(HOST) --port $(PORT) --reload
 
-run: ## Start FastAPI without reload
-	$(PYTHON) -m uvicorn $(API) --host $(HOST) --port $(PORT)
+run: ## Start API without reload
+	$(PYTHON) -m uvicorn $(API) \
+		--host $(HOST) --port $(PORT)
 
-health: ## Check API health (server must be running)
-	curl --fail --silent --show-error http://$(HOST):$(PORT)/health
+health: ## Check API health
+	curl --fail --silent --show-error \
+		http://$(HOST):$(PORT)/health
 	@echo ""
 
-test: ## Run automated tests
+test: ## Run all automated tests
 	$(UV) run pytest -v
 
-lint: ## Check code quality
-	$(UV) run ruff check src tests
+lint: ## Run Ruff linting
+	$(UV) run ruff check src tests examples
 
-format: ## Format Python source files
-	$(UV) run ruff format src tests
+format: ## Format Python files
+	$(UV) run ruff format src tests examples
 
-check: lint test ## Run linting and tests
+check: lint test ## Run lint and tests
 
-demo: ## Run create-inspect-terminate lifecycle demo
+demo: ## Run basic lifecycle demo
 	$(PYTHON) examples/lifecycle_demo.py
 
-tree: ## Show project dependencies
-	$(UV) tree
-
-status: ## Show Git and disk usage
-	@git status --short
-	@df -h .
-	@du -sh .venv .runtime 2>/dev/null || true
-
-clean: ## Remove Python test and lint caches
-	@find src tests -type d \
-		\( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \) \
-		-prune -exec rm -rf -- {} +
-	@rm -rf .pytest_cache .ruff_cache
-	@echo "Temporary Python caches removed."
-
-clean-cache: ## Prune unused uv package cache entries
-	$(UV) cache prune
-
-clean-runtime: ## Delete local sandbox metadata/workspaces (destructive)
-	@echo "WARNING: This deletes AgentHaven local runtime data."
-	@read -r -p "Type RESET to continue: " answer; \
-		if [ "$$answer" = "RESET" ]; then \
-			rm -rf -- .runtime; \
-			echo "Runtime removed."; \
-		else \
-			echo "Cancelled."; \
-		fi
-
-reset-env: ## Recreate Python project environment
-	@echo "This will delete the project virtual environment."
-	@read -r -p "Type RESET to continue: " answer; \
-		if [ "$$answer" = "RESET" ]; then \
-			rm -rf -- .venv; \
-			$(UV) sync; \
-		else \
-			echo "Cancelled."; \
-		fi
-
-bbwrap:
-	sudo apt update
-	sudo apt install -y bubblewrap
-	bwrap --version
-
-
 sandbox-check: ## Verify Bubblewrap isolation
-	@command -v bwrap >/dev/null || { echo "Install bubblewrap"; exit 1; }
-	@command -v prlimit >/dev/null || { echo "Install prlimit"; exit 1; }
+	@command -v bwrap >/dev/null
 	bwrap --unshare-all --die-with-parent \
 		--ro-bind /usr /usr \
 		--ro-bind-try /bin /bin \
@@ -105,21 +69,64 @@ sandbox-check: ## Verify Bubblewrap isolation
 		-- /usr/bin/python3 -I -c \
 		'print("Sandbox isolation ready")'
 
-sandbox-demo: ## Run the full execution lifecycle demo
+sandbox-demo: ## Run sandbox execution demonstration
 	$(PYTHON) examples/execution_demo.py
 
-sandbox-tests: ## Run sandbox-related automated tests
+sandbox-tests: ## Run all sandbox tests
 	$(UV) run pytest -v tests/
 
-file-tests: ## Run AgentHaven file API tests
-	$(UV) run pytest -v tests/test_files.py
-
-api-tests: ## Run all AgentHaven API tests
-	$(UV) run pytest -v tests/
-
-
-execution-tests: ## Run real Bubblewrap execution tests
+execution-tests: ## Run Bubblewrap execution tests
 	$(UV) run pytest -v tests/test_sandbox_execution.py
 
-history-tests: ## Test SQLite execution history
+file-tests: ## Run file API tests
+	$(UV) run pytest -v tests/test_files.py
+
+api-tests: ## Run all API tests
+	$(UV) run pytest -v tests/
+
+history-tests: ## Run execution history tests
 	$(UV) run pytest -v tests/test_execution_history.py
+
+ttl-tests: ## Run sandbox TTL tests
+	$(UV) run pytest -v tests/test_ttl.py
+
+full-demo: ## Run complete sandbox lifecycle demo
+	$(PYTHON) examples/full_demo.py
+
+tree: ## Show Python dependencies
+	$(UV) tree
+
+status: ## Show Git and disk usage
+	git status --short
+	df -h .
+	@du -sh .venv .runtime 2>/dev/null || true
+
+clean: ## Remove Python development caches
+	@find src tests examples -type d \
+		\( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \) \
+		-prune -exec rm -rf -- {} +
+	@rm -rf .pytest_cache .ruff_cache
+	@echo "Development caches removed."
+
+clean-cache: ## Prune uv dependency cache
+	$(UV) cache prune
+
+clean-runtime: ## Delete sandbox runtime data
+	@echo "WARNING: Deletes sandbox sessions and history."
+	@echo "Stop the AgentHaven API before proceeding."
+	@read -r -p "Type RESET to confirm: " answer; \
+		if [ "$$answer" = "RESET" ]; then \
+			rm -rf -- .runtime; \
+			echo "Runtime deleted."; \
+		else \
+			echo "Cancelled."; \
+		fi
+
+reset-env: ## Recreate virtual environment
+	@read -r -p "Type RESET to recreate .venv: " answer; \
+		if [ "$$answer" = "RESET" ]; then \
+			rm -rf -- .venv; \
+			$(UV) sync; \
+		else \
+			echo "Cancelled."; \
+		fi
