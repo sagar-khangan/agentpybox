@@ -422,6 +422,20 @@ make env-data        # only if python-pandas is not already registered
 make demo-pandas
 ```
 
+## Developer and AI Agent Integration
+
+AgentHaven provides a Python SDK and CLI for integrating
+isolated code execution into applications and AI agents.
+
+See the [Integration Guide](docs/INTEGRATION_GUIDE.md) for:
+
+- Python SDK and CLI usage
+- Dynamic environment discovery and reuse
+- OpenRouter coding-agent integration
+- File uploads, execution and artifact retrieval
+- Error handling, retries and security boundaries
+
+
 **Roadmap:** enforce cgroup-v2 limits and robust process-tree cleanup; add adversarial filesystem/isolation tests; improve environment versioning and dependency locking; add optional CPU/memory telemetry; expand package/runtime compatibility tests.
 
 ---
