@@ -1,0 +1,16 @@
+.PHONY: test-security security-audit benchmark build demo-multi
+
+test-security:
+	uv run --extra dev pytest -v tests/test_security_regression.py tests/test_security_audit.py
+
+security-audit:
+	uv run python -m agenthaven.security_audit
+
+benchmark:
+	uv run python examples/benchmark.py --runs 20 --warmups 3 --output output/benchmark.json
+
+build:
+	uv build
+
+demo-multi:
+	uv run python examples/multi_sandbox_demo.py
