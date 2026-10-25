@@ -1,5 +1,5 @@
-product,quantity,price
-Laptop,2,50000
-Mouse,5,800
-Keyboard,3,1500
-Monitor,2,12000
+customer_id,product,quantity,price
+C001,Laptop,2,50000
+C002,Mouse,5,800
+C001,Keyboard,3,1500
+C003,Monitor,2,12000
