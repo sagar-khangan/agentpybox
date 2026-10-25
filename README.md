@@ -1,185 +1,212 @@
 # AgentHaven
 
-**Lightweight, Dockerless Python execution sandboxes for local developers and AI agents.**
+**Dockerless, local-first Python sandboxes — Python SDK + CLI with reusable dependency environments.**
 
-AgentHaven is a **Python library and command-line tool**, not a web service. It creates multiple isolated execution sessions on Linux, runs Python code inside Bubblewrap, transfers files (including binary artifacts), records execution history, reports lightweight metrics, and cleans up sandbox workspaces.
+AgentHaven creates isolated Python execution sessions on Linux using Bubblewrap. It supports multiple persistent sandboxes, text/binary artifact transfers, execution history, TTL-based cleanup, and a registry of reusable Python virtual environments prepared from `requirements.txt` files.
 
-**No FastAPI, Docker, LangChain, LangGraph, or always-running service required.** Future agents can call the same Python library directly.
+**No FastAPI server, no HTTP service, no Docker, and no AI-agent framework required.** Other Python applications (including AI agents) can use the SDK directly.
 
 > [!WARNING]
-> **Local developer prototype — not a hardened untrusted-code sandbox.** Bubblewrap shares the host kernel, sandbox processes share the operator's OS user identity for the writable workspace, and resource controls are not enforced over an entire process tree. Do **not** run hostile or unreviewed LLM-generated code on a sensitive host, run AgentHaven as root, or expose it as a multi-user isolation service. See [Security model and limitations](#security-model-and-limitations).
+> **Security:** AgentHaven is a **single-user local development prototype**, not a hardened malicious-code sandbox. Bubblewrap shares the host kernel, and the current implementation does **not** provide cgroup-v2 process-tree quotas, comprehensive filesystem quotas, seccomp hardening, or strong protection against hostile packages. Package installation happens **outside** Bubblewrap and may execute installation-time code. Only a trusted local operator should create environments or approve dependencies. Do not run as root, expose it to untrusted users, or blindly execute unreviewed LLM-generated code on a sensitive machine.
 
 ## Features
 
-- **Multiple sessions:** Create, inspect, list, reuse, and terminate independent sandboxes.
-- **Python execution:** Run scripts or snippets with separate Python interpreter launches; workspace files persist per session.
-- **Runtime profiles:** `python-basic`, `python-data`, and `python-test`, each with predefined limits.
-- **One-command workflow:** Create → upload input files → execute → download outputs → terminate.
-- **Artifacts:** Text and binary file upload/download, with flat filenames and a 10 MiB transfer limit per file.
-- **State:** SQLite execution history, source hashes, timestamps, and sandbox lifecycle information.
-- **Observability:** Execution counts, outcomes, timeout and truncation counts, and p50/p95/p99 wall-clock durations.
-- **TTL and recovery:** Expire sessions when the manager starts or the CLI cleanup command runs.
-- **CLI + SDK:** The same engine is accessible through terminal commands or Python classes.
+- **Class-based Python SDK:** `SandboxManager`, `Sandbox`.
+- **CLI:** create, inspect, execute, list, delete, upload, download, history, metrics, cleanup.
+- **One-command tasks:** upload inputs → run a script → download outputs → automatically terminate.
+- **Multiple sessions:** independent workspaces; scripts within the same session share files, not interpreter state. Executions are serialized to limit contention.
+- **Dynamic environment registry:** create a reusable virtual environment with `uv`, list and inspect its installed packages, find compatible environments, and delete unused ones.
+- **Built-in default:** `python-basic` uses Ubuntu's `/usr/bin/python3` and the standard library. `python-data` and `python-test` are legacy standard-library policies, **not** bundled pandas or pytest environments.
+- **SQLite observability:** execution IDs, source hashes, duration, exit status, timeouts, truncation and p50/p95/p99 wall-clock metrics.
+- **No daemon:** expired sessions are reclaimed when AgentHaven is used or `cleanup` runs, not continuously in the background.
 
 ## Architecture
 
-```text
-          Developer / Python application / AI agent
-                            |
-                 +----------+----------+
-                 |                     |
-          agenthaven CLI         Python SDK
-                 |                     |
-                 +----------+----------+
-                            |
-                      SandboxManager
-                            |
-               +------------+------------+
-               |                         |
-         SQLite lifecycle,             Runner
-         history, metrics                |
-                                  Bubblewrap + prlimit
-                                         |
-                               Isolated Python process
-                                         |
-                               Per-sandbox workspace
+```mermaid
+flowchart TD
+    U[Developer or AI Agent] --> CLI[agenthaven CLI]
+    U --> SDK[Python SDK]
+    CLI --> M[SandboxManager]
+    SDK --> M
+    M --> DB[(SQLite sessions and history)]
+    M --> ER[Environment Registry]
+    ER --> UV[uv prepares reusable venvs]
+    M --> R[Bubblewrap Runner]
+    ER -->|read-only venv mount| R
+    R --> W[Per-session writable workspace]
+    R --> O[Result: stdout, stderr, exit, duration]
+    O --> DB
 ```
 
-There is no REST endpoint to deploy or call. The CLI and SDK invoke the local execution engine directly.
+For additional workflow diagrams, see [`docs/architecture.md`](docs/architecture.md) if present in your checkout.
 
 ## Requirements
 
-- Ubuntu or another supported Linux distribution.
-- `/usr/bin/python3` for code executed inside the sandbox.
-- `bubblewrap` (`bwrap`) and `prlimit` (`util-linux`).
-- Host Python **3.11+** and [`uv`](https://docs.astral.sh/uv/) for development and execution.
-- A Linux configuration permitting Bubblewrap user namespaces. Ubuntu may require its distribution-supplied Bubblewrap AppArmor profile. **Do not disable AppArmor globally.**
+- Ubuntu or compatible Linux; tested workflow on Ubuntu 24.04.
+- `/usr/bin/python3`, `bubblewrap` (`bwrap`) and `prlimit` (from `util-linux`).
+- [`uv`](https://docs.astral.sh/uv/) for the CLI/SDK installation and environment creation.
+- A working unprivileged namespace configuration. Ubuntu can require a distribution-provided Bubblewrap AppArmor profile; **do not disable AppArmor globally**.
+
+Install Linux prerequisites:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y bubblewrap util-linux
+sudo apt-get install -y python3 bubblewrap util-linux
+```
+
+Install `uv` using its [official instructions](https://docs.astral.sh/uv/getting-started/installation/) if it is not already available.
+
+## Setup
+
+From the repository root:
+
+```bash
 uv sync --extra dev
 uv run agenthaven doctor
 uv run agenthaven profiles
-uv run agenthaven run --code "print(2 + 2)"
-```
-
-For common development commands:
-
-```bash
-make install
-make doctor
+uv run agenthaven env list
+uv run agenthaven run --env python-basic --code "print(2 + 2)"
 make check
-make demo
 ```
 
-## Project layout
+The repository's **host development `.venv`** is different from the **execution environments** in AgentHaven's registry. You do not need to activate `.venv` when running commands through `uv run`.
 
-The examples use `input/` for source data and scripts and `output/` for downloaded results:
+### Project layout
 
 ```text
 agenthaven/
-├── src/agenthaven/          # Package, CLI, manager, runner and SQLite store
-├── examples/                # Python SDK demonstration
-├── tests/                   # Automated tests
+├── src/agenthaven/
+│   ├── __init__.py
+│   ├── cli.py
+│   ├── manager.py
+│   ├── environments.py
+│   ├── runner.py
+│   ├── store.py
+│   └── models.py
 ├── input/
-│   ├── analyze.py
 │   ├── sales.csv
-│   └── customers.csv        # Optional second input
-├── output/                  # Downloaded artifacts (generated)
-├── pyproject.toml
+│   ├── customers.csv
+│   ├── analyze.py
+│   ├── pandas_analysis.py
+│   └── requirements-data.txt
+├── output/                 # Generated/downloaded files
+├── examples/
+│   ├── sdk_demo.py
+│   └── multi_sandbox_demo.py
+├── tests/
+├── docs/
+│   └── architecture.md
 ├── Makefile
-└── README.md
+└── pyproject.toml
 ```
 
-`input/` is a **local project folder**, not a special sandbox mount. A `--upload input/sales.csv` option copies the file into the sandbox workspace as `sales.csv`. Scripts should open `sales.csv`, not `input/sales.csv`, unless they create that subdirectory themselves.
+`input/` and `output/` are conventions for demo files, **not** special AgentHaven mounts. Inputs are explicitly uploaded by the CLI/SDK; outputs must be explicitly downloaded before a one-time sandbox is destroyed.
 
 ## Quick start: one-command execution
 
-Create `input/sales.csv`:
-
-```csv
-product,quantity,price
-Laptop,2,50000
-Mouse,5,800
-Keyboard,3,1500
-Monitor,2,12000
-```
-
-Create `input/analyze.py`:
-
-```python
-import csv
-from pathlib import Path
-
-with open("sales.csv", newline="", encoding="utf-8") as stream:
-    rows = list(csv.DictReader(stream))
-
-total = sum(int(row["quantity"]) * float(row["price"]) for row in rows)
-Path("report.txt").write_text(f"Total Revenue: Rs {total:,.2f}\n", encoding="utf-8")
-print(f"Processed {len(rows)} rows")
-```
-
-Run the complete workflow:
+Place `analyze.py` and `sales.csv` in `input/`. The script should read `sales.csv` from its working directory and write `report.txt` there.
 
 ```bash
-mkdir -p output
+mkdir -p input output
 uv run agenthaven run \
-  --profile python-data \
+  --env python-data \
   --file input/analyze.py \
   --upload input/sales.csv \
   --download report.txt \
-  --output-dir output
+  --output-dir output/
 
 cat output/report.txt
 ```
 
-Expected report content for the sample data:
+The CLI creates a temporary sandbox, uploads `sales.csv` under its **basename**, executes the script, attempts artifact downloads, and terminates the session even when execution fails. The requested output filename must exactly match what the script creates.
 
-```text
-Total Revenue: Rs 132,500.00
+Run inline code without files:
+
+```bash
+uv run agenthaven run --env python-basic --code "print(sum(range(100)))"
 ```
 
-The `run` command creates a temporary sandbox and tears it down after the workflow, including on execution failures. Requested downloads must be files generated inside the sandbox. Review how your installed CLI reports missing output files before using it in automation.
+For multiple inputs, supply `--upload` more than once. Likewise, use multiple `--download` options for multiple artifacts.
 
-### Multiple input and output files
+## Dynamic Python environments
+
+Each environment is a **reusable virtual environment**, distinct from a sandbox session. Environment creation uses `uv` and may need internet access, but sandbox execution uses an isolated network namespace with no network access by default.
+
+### 1. Define dependencies
+
+Example `input/requirements-data.txt`:
+
+```text
+pandas
+numpy
+```
+
+Unpinned versions are convenient for demonstrations. **Pin and review versions for reproducible projects**. Package resolution and installation can introduce supply-chain risks.
+
+### 2. Create a registered environment
+
+```bash
+uv run agenthaven env create python-pandas \
+  --requirements input/requirements-data.txt
+```
+
+This installs packages **once** in a cached virtual environment. Existing ready environments cannot simply be overwritten under the same name; create a new name/version or delete an unused environment and recreate it.
+
+### 3. Discover installed capabilities
+
+```bash
+uv run agenthaven env list
+uv run agenthaven env inspect python-pandas
+uv run agenthaven env find --package pandas
+uv run agenthaven env find --package pandas --package numpy
+```
+
+`env find` matches installed distribution names from the registry, **not semantic descriptions** such as “machine learning.” A registered environment may include additional transitive dependencies.
+
+### 4. Execute in that environment
+
+```bash
+uv run agenthaven run --env python-pandas \
+  --code "import pandas, numpy; print(pandas.__version__, numpy.__version__)"
+```
+
+For the full pandas example (requires `customer_id` in both CSV files):
 
 ```bash
 uv run agenthaven run \
-  --profile python-data \
-  --file input/analyze.py \
+  --env python-pandas \
+  --file input/pandas_analysis.py \
   --upload input/sales.csv \
   --upload input/customers.csv \
   --download report.csv \
   --download summary.json \
-  --output-dir output
+  --output-dir output/
 ```
 
-**This is an advanced example, not the simple CSV demo above.** Your `input/analyze.py` must actually read both inputs and generate `report.csv` and `summary.json`; otherwise the downloads cannot succeed. Use the earlier `report.txt` command with the sample script unchanged.
+This demonstrates actual third-party imports, CSV joining/aggregation, output artifacts and history recording. The Python environment is mounted read-only; execution writes only to the session workspace.
 
-### Makefile shortcuts
-
-If you have the updated Makefile from the CLI workflow, common commands are:
+### 5. Delete an unused environment
 
 ```bash
-make analyze                  # Input CSV -> output/report.txt
-make run-script FILE=input/analyze.py
-make run-code CODE="print(42)"
-make metrics HOURS=24
-make sandboxes
-make cleanup
+uv run agenthaven env delete python-pandas
 ```
 
-`make run-script` runs a script but does not automatically upload any additional data unless your Makefile target explicitly supplies those files.
+Deletion is refused while an active session references the environment. Deleted environments can be recreated from a requirements file.
+
+> **Compatibility:** Registered environments currently use Ubuntu's `/usr/bin/python3` by default, which may have a different version from the Python interpreter used by `uv` for AgentHaven's own CLI. Virtual-environment symlinks and native packages can have platform dependencies. A successful `env create` only proves installation; verify actual imports with `agenthaven run --env ...`.
 
 ## Persistent sandbox sessions (CLI)
 
-Use this mode when one execution must leave files for another:
+Use a persistent session when you need multiple executions or want to inspect files between commands.
 
 ```bash
-uv run agenthaven create --profile python-data --ttl 300
-# Copy the returned sandbox ID:
-SID="<sandbox-id>"
+uv run agenthaven create --env python-basic --ttl 300
+```
+
+Copy the `id` from the JSON output, then set:
+
+```bash
+SID="YOUR-SANDBOX-ID"
 
 uv run agenthaven put "$SID" input/sales.csv
 uv run agenthaven execute "$SID" --file input/analyze.py
@@ -190,140 +217,182 @@ uv run agenthaven inspect "$SID"
 uv run agenthaven delete "$SID"
 ```
 
-Other available commands:
+Useful general commands:
 
 ```bash
 uv run agenthaven list
-uv run agenthaven profiles
+uv run agenthaven list --status created
 uv run agenthaven metrics --hours 24
 uv run agenthaven cleanup
-uv run agenthaven doctor
+uv run agenthaven --help
+uv run agenthaven run --help
+uv run agenthaven env --help
 ```
 
-Use `uv run agenthaven --help` and `uv run agenthaven <command> --help` for exact options. CLI execution errors and nonzero script exit codes cause a nonzero CLI exit status.
+The one-time `run` command is best for most tasks; persistent sessions are best for interactive or multistep workflows.
 
 ## Python SDK
+
+You can embed AgentHaven into any Python application without starting a server.
 
 ```python
 from agenthaven import SandboxManager
 
 manager = SandboxManager()
 
-with manager.sandbox(profile="python-data", ttl_seconds=300) as sandbox:
-    sandbox.put_text("input.csv", "a,b\n1,2\n")
+print(manager.environments.list())
+print(manager.environments.find(["pandas"]))
 
-    result = sandbox.execute(
+with manager.sandbox(profile="python-basic", ttl_seconds=300) as box:
+    box.put_text("input.txt", "hello from AgentHaven")
+
+    result = box.execute(
         "from pathlib import Path\n"
-        "print(Path('input.csv').read_text())"
+        "print(Path('input.txt').read_text())\n"
+        "Path('result.txt').write_text('completed')\n"
     )
 
     print(result.stdout)
-    print(result.exit_code, result.duration_ms)
-    print(sandbox.files())
-    print(sandbox.history())
+    print(result.stderr)
+    print(result.exit_code, result.duration_ms, result.ok)
+    print(box.get_text("result.txt"))
+    print(box.files())
+    print(box.history())
 
 # Context manager terminates the session.
 print(manager.metrics(hours=24))
 ```
 
-For sessions reused across processes, call `manager.create(...)`, save the returned `.id`, then later use `manager.get(id)` and terminate the sandbox explicitly.
+To provision a reusable environment through the Python SDK (trusted operator only):
 
-File methods include `upload`, `download`, `put_bytes`, `get_bytes`, `put_text`, `get_text`, `delete_file`, and `files`. Each code execution starts a **new Python interpreter**, but the workspace persists while the session exists. Executions are serialized with a local file lock (`flock`) to keep resource use modest.
+```python
+manager.create_environment("python-pandas", "input/requirements-data.txt")
+print(manager.environments.inspect("python-pandas"))
+```
 
-## Runtime profiles
+A long-lived sandbox can be created with `manager.create(profile="python-basic")`, revisited using `manager.get(sandbox_id)`, and later terminated with `.terminate()`. Multiple sandboxes can exist simultaneously, but execution is serialized by the local process lock to conserve resources.
 
-| Profile | Intended use | Timeout | Address-space limit |
-| --- | --- | ---: | ---: |
-| `python-basic` | General standard-library scripts | 5 seconds | 512 MiB per process |
-| `python-data` | CSV, JSON, statistics, SQLite via stdlib | 10 seconds | 512 MiB per process |
-| `python-test` | Standard-library `unittest` and assertions | 10 seconds | 512 MiB per process |
+### SDK artifact methods
 
-All profiles currently invoke `/usr/bin/python3` with predefined Bubblewrap restrictions. `python-data` **does not imply pandas or NumPy**, and `python-test` **does not imply pytest** inside the sandbox. These profiles do not currently provide distinct package sets or mount policies.
+The `Sandbox` class offers `put_text`, `get_text`, `put_bytes`, `get_bytes`, `upload`, `download`, `files`, and `delete_file`.
 
-## Execution history and metrics
+```python
+with manager.sandbox(profile="python-basic") as box:
+    box.upload("input/sales.csv")
+    result = box.execute("from pathlib import Path; Path('done.txt').write_text('ok')")
+    if result.ok:
+        box.download("done.txt", "output/done.txt")
+```
 
-Execution metadata is stored in local SQLite. It includes sandbox and execution IDs, profile, SHA-256 source hash, timestamps, exit code, timeout and truncation flags, and elapsed wall time. **Source code and stdout/stderr are not retained in history**, although a calling program can store them elsewhere.
+Create `output/` first if it does not exist. File names inside a sandbox are **flat** (`report.csv`, not `subdir/report.csv`); the library supports binary-safe transfers with a per-transfer size limit of 10 MiB. These are API limits, **not** hard disk-use quotas.
+
+## Makefile shortcuts
+
+The supplied Makefile supports the following developer workflows:
+
+| Command | Description |
+|---|---|
+| `make install` | Install development dependencies |
+| `make check` | Ruff lint + pytest |
+| `make format` | Format Python source |
+| `make doctor` | Verify Bubblewrap prerequisites |
+| `make demo-basic` | Run simple built-in Python |
+| `make demo-sdk` | SDK example |
+| `make demo-multi` | Multiple independent sandbox sessions |
+| `make demo-data` | Standard-library CSV analysis |
+| `make env-data` | Register `python-pandas` (first time only) |
+| `make demo-pandas` | Pandas CSV analysis with artifact downloads |
+| `make env-list` | List registered environments |
+| `make env-inspect ENV=python-pandas` | Inspect packages |
+| `make env-find PACKAGE=pandas` | Find matching environment |
+| `make env-delete ENV=python-pandas` | Delete an unused environment |
+| `make run-script FILE=input/analyze.py` | Execute a script (without automatic uploads) |
+| `make run-code CODE="print(42)"` | Run inline Python |
+| `make sandboxes` | List sessions |
+| `make create-sandbox PROFILE=python-basic` | Create a persistent session |
+| `make history SID=<id>` | View execution history |
+| `make metrics HOURS=24` | Historical execution metrics |
+| `make cleanup` | Expire elapsed sessions |
+
+Run `make help` for the complete menu. For multi-input tasks, use `make demo-pandas` or the explicit CLI command above; `make run-script` alone does not upload CSV inputs.
+
+## Observability
+
+Execution records are retained in SQLite after a sandbox is terminated. Fields include execution ID, sandbox ID, environment/profile, timestamp, source-code SHA-256 hash, exit code, wall-clock duration, timeout and output-truncation flags.
 
 ```bash
 uv run agenthaven metrics --hours 24
 uv run agenthaven history "$SID"
 ```
 
-The metrics summary includes:
+Metrics include execution counts, success/failure/timeout counts, success percentage and p50/p95/p99 duration. **CPU usage, peak RSS and comprehensive process-tree telemetry are not currently collected.** Full executed source, stdout and stderr are not retained in SQLite.
 
-- Number of executions, successes, failures and timeouts.
-- Success percentage and output truncation count.
-- p50, p95, and p99 wall-clock execution duration.
-- Sandbox lifecycle counts.
+State and registered environments are typically located at:
 
-**Not collected:** per-execution CPU usage, peak RAM, whole-process-tree resource use or live streamed telemetry. Percentiles are calculated from stored runs; very small sample sizes should not be treated as benchmark-quality distributions.
+```text
+~/.local/share/agenthaven/
+├── agenthaven.sqlite3
+├── environments/
+│   └── python-pandas/
+│       ├── metadata.json
+│       ├── requirements.txt
+│       └── venv/
+└── workspaces/
+    └── <sandbox-id>/
+```
 
-## TTL, cleanup, and concurrency
-
-A sandbox has an expiration time. Expired sessions are cleaned up when a new `SandboxManager` is initialized or `agenthaven cleanup` is invoked. There is **no background daemon**, so expired workspaces may remain on disk if AgentHaven is idle. Context-managed temporary sessions are terminated when the context exits.
-
-Several sandboxes can exist at once and have separate workspaces. Execution is serialized locally; this is **not parallel multi-tenant execution**.
+Do not commit this state directory, virtual environments, secrets, `.env` files or user-generated artifacts to Git.
 
 ## Troubleshooting
 
-**`ImportError: cannot import name 'main' from 'agenthaven.cli'`**
+**`uv run` cannot find `agenthaven`** — Run from the repository root, where `pyproject.toml` is present, and execute `uv sync --extra dev`. To install a command accessible from other directories, use `uv tool install --editable .` from the project root.
 
-The `pyproject.toml` console entry point expects `agenthaven.cli:main`. Ensure the complete `src/agenthaven/cli.py` defines `main()`:
+**`ImportError: cannot import name 'main'`** — Verify `src/agenthaven/cli.py` has `def main(argv=None)` and that `pyproject.toml` points its console script at `agenthaven.cli:main`. Run `uv run agenthaven --help`.
 
-```bash
-uv run python -c "from agenthaven.cli import main; print('CLI import OK')"
-uv run agenthaven --help
-```
+**`No such file or directory: sales.csv`** — Local `--upload` paths must exist. Use `--upload input/sales.csv`; inside the sandbox the file is named `sales.csv`.
 
-**`No such file or directory: 'sales.csv'`**
+**`KeyError: 'customer_id'` from pandas** — The pandas demo joins sales and customers on `customer_id`. Confirm both files include that column.
 
-Local input paths must exist before an upload. If you organized files under `input/`, use `--upload input/sales.csv`, not `--upload sales.csv`.
+**Artifact download fails** — The script must create the named artifact in its working directory before the one-time sandbox terminates. Check `stderr` and exit code first.
 
-**A downloaded file is missing**
+**Registered environment exists but import fails** — Test `uv run agenthaven run --env ENV --code "import PACKAGE"`; inspect the registry with `env inspect`. `env create` does not itself verify Bubblewrap runtime compatibility.
 
-The executed script must generate the exact requested filename in its sandbox workspace. The basic example creates `report.txt`, not `report.csv` or `summary.json`.
+**Bubblewrap namespace/AppArmor failure** — Run `uv run agenthaven doctor`. On Ubuntu, use supported Bubblewrap/AppArmor configuration; do not disable host namespace protections globally.
 
-**Bubblewrap fails with a namespace or permission error**
+**`make check` tries importing FastAPI** — Remove obsolete tests from the older HTTP-server architecture. The current project has no FastAPI dependency.
 
-Run `uv run agenthaven doctor`; check Ubuntu's supplied Bubblewrap AppArmor/user-namespace configuration. Do not globally disable AppArmor or unprivileged namespace protections as a workaround.
+**Creating an environment twice fails** — An environment name must be unique. Reuse it, delete it when unused, or create a new name (for example `python-pandas-v2`).
 
-**Tests**
+## Security and operational scope
 
-```bash
-uv sync --extra dev
-make check
-uv run pytest -q
-```
+- **Trusted local operator only:** no authentication or separate OS-user privilege boundary.
+- **Network isolated during execution:** don't assume network access inside the sandbox, including for AWS SDK calls. Importing `boto3` works without accessing AWS.
+- **Dependency setup is higher risk:** `uv` fetches packages during environment creation outside Bubblewrap; review and approve requirements before installation. `--only-binary` reduces source builds but not all supply-chain risks.
+- **Read-only installed dependencies:** sandboxes receive a read-only environment mount and a writable workspace. Virtual environment mounting is not guaranteed to support every wheel or native dependency.
+- **Incomplete limits:** process address-space and CPU resource limits are not whole-process-tree memory/CPU quotas; file transfer limits aren't disk quotas.
+- **No background expiry daemon:** automatic TTL cleanup occurs when a manager starts or `cleanup` is called.
+- **No remote or multi-tenant service:** do not expose this prototype for arbitrary users to execute code.
 
-## Security model and limitations
-
-> [!CAUTION]
-> AgentHaven is for a **single trusted local operator** experimenting with controlled code. It is **not suitable for malicious or arbitrarily unreviewed code** without significant additional isolation work.
-
-- **Shared kernel and user identity:** Bubblewrap uses Linux namespaces but does not supply a virtual machine or different kernel. Sandbox execution uses the current operating-system account for writable workspace files.
-- **No network by default:** Networking is unshared; this does not establish that every possible host escape has been prevented.
-- **Incomplete process-tree controls:** `prlimit` is not a cgroup-v2 whole-tree CPU/memory/process limit, and descendant processes require stronger lifecycle enforcement.
-- **Filesystem controls are not hard quotas:** API/SDK file size checks do not prevent Python code from creating additional workspace files. File operations have remaining race/host-user risks.
-- **No multi-user authorization boundary:** Any program running with your OS account can potentially access local state. There is no authentication layer because there is no HTTP service.
-- **No seccomp profile or hardened filesystem mount policy:** Additional kernel-level containment, filesystem quotas, and adversarial tests are needed before operating as an untrusted-code service.
-- **Keep secrets outside sandbox inputs:** Source code is hashed rather than persisted in SQLite, but your OS user still owns local workspace and history files.
-
-Never run AgentHaven as root or make it an execution endpoint for untrusted remote users in its present form.
-
-## Development and contribution
+## Development
 
 ```bash
-make install
-make doctor
-make lint
 make format
-make test
 make check
-make demo
+make demo-basic
+make demo-multi
+make demo-data
+make metrics
 ```
 
-Keep `.venv/`, `.runtime/`, SQLite files, `.env` secrets, and generated `output/` artifacts out of version control. Sample files in `input/` can be committed if they contain no personal or confidential data.
+After preparing the pandas environment:
 
-## Direction
+```bash
+make env-data        # only if python-pandas is not already registered
+make demo-pandas
+```
 
-AgentHaven deliberately focuses on being a **small, framework-independent execution tool**, not a new agent orchestration framework. Possible next improvements include stronger cgroup-v2 and filesystem containment, more thorough adversarial tests, resource telemetry, controlled dependency profiles, and an improved installable CLI/SDK experience.
+**Roadmap:** enforce cgroup-v2 limits and robust process-tree cleanup; add adversarial filesystem/isolation tests; improve environment versioning and dependency locking; add optional CPU/memory telemetry; expand package/runtime compatibility tests.
+
+---
+
+AgentHaven is designed as an **execution building block**, not an AI-agent framework: any Python caller can select a registered environment, create a sandbox, execute code, retrieve artifacts and inspect results without an HTTP server or Docker.
