@@ -1,7 +1,7 @@
 import pytest
 
-from agenthaven import SandboxManager
-from agenthaven.runner import available
+from agentpybox import SandboxManager
+from agentpybox.runner import available
 
 
 @pytest.mark.skipif(not available(), reason="Requires working Bubblewrap/prlimit")

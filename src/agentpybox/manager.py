@@ -1,4 +1,4 @@
-"""Class-based AgentHaven SDK. No HTTP server."""
+"""Class-based AgentPyBox SDK. No HTTP server."""
 
 import hashlib
 import os
@@ -15,7 +15,7 @@ from .models import ExecutionResult
 from .runner import PROFILES, execute
 from .store import Store, utcnow
 
-DEFAULT_ROOT = Path.home() / ".local" / "share" / "agenthaven"
+DEFAULT_ROOT = Path.home() / ".local" / "share" / "agentpybox"
 
 MAX_ARTIFACT = 10 * 1024 * 1024
 MAX_FILES = 100
@@ -35,7 +35,7 @@ def _sid(value):
 
 
 def _filename(value):
-    if not FILENAME.fullmatch(value) or value.startswith("agenthaven_"):
+    if not FILENAME.fullmatch(value) or value.startswith("agentpybox_"):
         raise SandboxError("Only flat, non-reserved filenames allowed")
     return value
 

@@ -1,10 +1,10 @@
-# AgentHaven Integration Guide
+# AgentPyBox Integration Guide
 
-**Audience:** Python developers, coding-agent builders, and maintainers integrating with the local AgentHaven SDK or CLI.
+**Audience:** Python developers, coding-agent builders, and maintainers integrating with the local AgentPyBox SDK or CLI.
 
-AgentHaven is a **Linux-only, Dockerless Python sandbox** with a local Python SDK and CLI. It does **not** run an HTTP server. It uses Bubblewrap for namespace-based execution, SQLite for lifecycle/history, and reusable Python environments prepared with `uv`.
+AgentPyBox is a **Linux-only, Dockerless Python sandbox** with a local Python SDK and CLI. It does **not** run an HTTP server. It uses Bubblewrap for namespace-based execution, SQLite for lifecycle/history, and reusable Python environments prepared with `uv`.
 
-> **Security boundary:** AgentHaven is a local developer prototype, **not** a hardened sandbox for hostile code. Do not auto-execute unreviewed agent output on a sensitive machine. Environment creation and dependency installation must remain under trusted operator control. See [SECURITY.md](SECURITY.md) and [SECURITY_MATRIX.md](SECURITY_MATRIX.md).
+> **Security boundary:** AgentPyBox is a local developer prototype, **not** a hardened sandbox for hostile code. Do not auto-execute unreviewed agent output on a sensitive machine. Environment creation and dependency installation must remain under trusted operator control. See [SECURITY.md](SECURITY.md) and [SECURITY_MATRIX.md](SECURITY_MATRIX.md).
 
 ## 1. Prerequisites
 
@@ -12,9 +12,9 @@ On Ubuntu/Linux, ensure `uv`, `/usr/bin/python3`, `bwrap`, and `prlimit` are ava
 
 ```bash
 sudo apt-get install bubblewrap util-linux
-cd /path/to/agenthaven
+cd /path/to/agentpybox
 uv sync --extra dev
-uv run agenthaven doctor
+uv run agentpybox doctor
 make check
 ```
 
@@ -27,21 +27,21 @@ The SDK and CLI are local; **no `make dev`, localhost HTTP URL, or FastAPI servi
 | Client | Recommended interface | Typical use |
 |---|---|---|
 | Python application | `SandboxManager` SDK | Programmatic lifecycle and artifact transfer |
-| Terminal, build pipeline | `agenthaven` CLI | Scripts, smoke tests, one-off jobs |
+| Terminal, build pipeline | `agentpybox` CLI | Scripts, smoke tests, one-off jobs |
 | AI coding agent | SDK behind a reviewed tool wrapper | Generate, inspect, execute, evaluate, retry |
-| LangChain/LangGraph later | Thin adapter calling the SDK | Framework-specific tools without changing AgentHaven |
+| LangChain/LangGraph later | Thin adapter calling the SDK | Framework-specific tools without changing AgentPyBox |
 
-Do not import or depend on a nonexistent AgentHaven HTTP endpoint.
+Do not import or depend on a nonexistent AgentPyBox HTTP endpoint.
 
 ## 3. Discover or prepare an environment
 
 ### Inspect existing environments
 
 ```bash
-uv run agenthaven env list
-uv run agenthaven env inspect python-basic
-uv run agenthaven env find --package pandas
-uv run agenthaven env find --package pandas --package numpy
+uv run agentpybox env list
+uv run agentpybox env inspect python-basic
+uv run agentpybox env find --package pandas
+uv run agentpybox env find --package pandas --package numpy
 ```
 
 Built-in `python-basic`, `python-data`, and `python-test` profiles use the system Python standard library. They do not install pandas or pytest. Other environments are prepared once and reused across sandbox sessions.
@@ -58,9 +58,9 @@ numpy
 Then:
 
 ```bash
-uv run agenthaven env create python-pandas \
+uv run agentpybox env create python-pandas \
   --requirements input/requirements-data.txt
-uv run agenthaven env inspect python-pandas
+uv run agentpybox env inspect python-pandas
 ```
 
 For reproducible builds, pin tested package versions and review package provenance. Registration downloads/install packages **outside** Bubblewrap; it must never be triggered automatically from arbitrary agent text. Agents can *request* an environment, but approval belongs to the operator.
@@ -68,7 +68,7 @@ For reproducible builds, pin tested package versions and review package provenan
 ### Python discovery
 
 ```python
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 manager = SandboxManager()
 for env in manager.environments.list():
@@ -87,7 +87,7 @@ A package name in the registry is **not** proof that every import or native exte
 Use repository-relative paths for local inputs. Files are uploaded under their basenames into the sandbox workspace.
 
 ```bash
-uv run agenthaven run \
+uv run agentpybox run \
   --env python-pandas \
   --file input/pandas_analysis.py \
   --upload input/sales.csv \
@@ -102,8 +102,8 @@ The `run` command creates a temporary session, uploads inputs, executes the scri
 Simpler examples:
 
 ```bash
-uv run agenthaven run --env python-basic --code "print(sum(range(100)))"
-uv run agenthaven run --env python-pandas --code "import pandas; print(pandas.__version__)"
+uv run agentpybox run --env python-basic --code "print(sum(range(100)))"
+uv run agentpybox run --env python-pandas --code "import pandas; print(pandas.__version__)"
 ```
 
 ## 5. Persistent sessions via the CLI
@@ -111,16 +111,16 @@ uv run agenthaven run --env python-pandas --code "import pandas; print(pandas.__
 Use this flow when separate executions need access to the same workspace files.
 
 ```bash
-uv run agenthaven create --env python-basic --ttl 300
+uv run agentpybox create --env python-basic --ttl 300
 # Set SID to the ID from the returned JSON:
 SID="<sandbox-id>"
-uv run agenthaven put "$SID" input/sales.csv
-uv run agenthaven execute "$SID" --file input/analyze.py
-uv run agenthaven files "$SID"
-uv run agenthaven get "$SID" report.txt output/report.txt
-uv run agenthaven history "$SID"
-uv run agenthaven inspect "$SID"
-uv run agenthaven delete "$SID"
+uv run agentpybox put "$SID" input/sales.csv
+uv run agentpybox execute "$SID" --file input/analyze.py
+uv run agentpybox files "$SID"
+uv run agentpybox get "$SID" report.txt output/report.txt
+uv run agentpybox history "$SID"
+uv run agentpybox inspect "$SID"
+uv run agentpybox delete "$SID"
 ```
 
 Each `execute` call starts a **new Python interpreter**; files persist between calls until the sandbox is terminated or expires. Multiple sessions may exist, but executions are serialized by the current local locking implementation.
@@ -129,7 +129,7 @@ Each `execute` call starts a **new Python interpreter**; files persist between c
 
 ```python
 from pathlib import Path
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 manager = SandboxManager()
 Path("output").mkdir(exist_ok=True)
@@ -168,7 +168,7 @@ Other supported artifact operations include `put_text`, `get_text`, `put_bytes`,
 ### SDK-managed persistent sessions
 
 ```python
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 manager = SandboxManager()
 box = manager.create(profile="python-basic", ttl_seconds=300)
@@ -214,7 +214,7 @@ The example optionally supports `-y` / `--yes` to bypass approval. **Do not enab
 This adapter does **not** create environments or download dependencies. It assumes the caller already approved the code.
 
 ```python
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 manager = SandboxManager()
 
@@ -238,7 +238,7 @@ def run_approved_python(code: str, env_name: str = "python-basic") -> dict:
 
 **Important:** The `run_approved_python` function is a building block, not an authorization system. Enforce human approval, task limits, access policy, and tool authorization **before** allowing an LLM to call it.
 
-A future LangChain/LangGraph adapter should wrap the same SDK method; it should not change AgentHaven's isolation implementation or grant package installation tools to the agent.
+A future LangChain/LangGraph adapter should wrap the same SDK method; it should not change AgentPyBox's isolation implementation or grant package installation tools to the agent.
 
 ## 8. Handling failures and retries
 
@@ -258,19 +258,19 @@ Limit retries and execution counts. Include only necessary sanitized error detai
 ## 9. Observability and lifecycle
 
 ```bash
-uv run agenthaven metrics --hours 24
-uv run agenthaven history "$SID"
-uv run agenthaven list
-uv run agenthaven cleanup
+uv run agentpybox metrics --hours 24
+uv run agentpybox history "$SID"
+uv run agentpybox list
+uv run agentpybox cleanup
 ```
 
 History contains execution IDs, environment IDs, code SHA-256 hashes, timestamps, duration, exit code and timeout/truncation flags. It does **not** permanently retain source code or execution stdout/stderr. Metrics include counts and p50/p95/p99 **wall-clock** execution duration. Do not interpret duration as CPU time or as measured peak memory.
 
-TTL cleanup occurs on manager initialization or manual `cleanup`, **not continuously** when AgentHaven is idle. The default implementation uses a single host user's SQLite and workspace directories.
+TTL cleanup occurs on manager initialization or manual `cleanup`, **not continuously** when AgentPyBox is idle. The default implementation uses a single host user's SQLite and workspace directories.
 
 ## 10. Security responsibilities
 
-**What AgentHaven currently does:** Bubblewrap namespace separation, disabled execution-network namespace, restricted mounts, read-only dependency environment mount, timeout, source/output limits, and `prlimit` resource ceilings.
+**What AgentPyBox currently does:** Bubblewrap namespace separation, disabled execution-network namespace, restricted mounts, read-only dependency environment mount, timeout, source/output limits, and `prlimit` resource ceilings.
 
 **What is not guaranteed:** whole-process-tree CPU/RAM enforcement, cgroup-v2 containment, seccomp hardening, hard filesystem quotas, orphaned-child cleanup, tenant isolation, safe execution of hostile packages, and a multi-user permission boundary.
 
@@ -293,4 +293,4 @@ These are diagnostic and regression checks, not proof of security certification.
 - [Release checklist](RELEASE.md) — packaging, CI and release verification
 - `README.md` — quick start and full CLI overview
 
-**Summary:** Keep the agent's model calls and decision logic in a trusted host-side application; use AgentHaven solely for bounded, reviewed code execution and artifacts. Reuse registered environments without letting untrusted agent prompts alter them.
+**Summary:** Keep the agent's model calls and decision logic in a trusted host-side application; use AgentPyBox solely for bounded, reviewed code execution and artifacts. Reuse registered environments without letting untrusted agent prompts alter them.

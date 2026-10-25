@@ -1,4 +1,4 @@
-"""AgentHaven CLI — local sandbox and environment registry."""
+"""AgentPyBox CLI — local sandbox and environment registry."""
 
 import argparse
 import json
@@ -16,14 +16,14 @@ def show(obj):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="agenthaven",
+        prog="agentpybox",
         description="Dockerless local Python sandboxes",
     )
 
     parser.add_argument(
         "--root",
         type=Path,
-        help="Override AgentHaven state directory",
+        help="Override AgentPyBox state directory",
     )
 
     subs = parser.add_subparsers(
@@ -365,7 +365,7 @@ def main(argv=None):
         subprocess.TimeoutExpired,
     ) as exc:
         print(
-            f"AgentHaven: {exc}",
+            f"AgentPyBox: {exc}",
             file=sys.stderr,
         )
         return 2

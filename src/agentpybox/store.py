@@ -18,7 +18,7 @@ class Store:
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.root, 0o700)
         (self.root / "workspaces").mkdir(mode=0o700, exist_ok=True)
-        self.path = self.root / "agenthaven.sqlite3"
+        self.path = self.root / "agentpybox.sqlite3"
         self.lock_path = self.root / ".lock"
         self.initialize()
 

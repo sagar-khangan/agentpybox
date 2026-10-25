@@ -1,8 +1,9 @@
 """Basic isolation probes. Passing does NOT establish hostile-code safety."""
+
 import pytest
 
-from agenthaven import SandboxManager
-from agenthaven.runner import available
+from agentpybox import SandboxManager
+from agentpybox.runner import available
 
 
 @pytest.fixture
@@ -25,7 +26,9 @@ def test_host_home_is_not_mounted(box):
 
 
 def test_outbound_socket_is_blocked(box):
-    result = box.execute("import socket\ntry:\n socket.socket().connect(('1.1.1.1', 443))\n print('CONNECTED')\nexcept OSError:\n print('BLOCKED')")
+    result = box.execute(
+        "import socket\ntry:\n socket.socket().connect(('1.1.1.1', 443))\n print('CONNECTED')\nexcept OSError:\n print('BLOCKED')"
+    )
     assert result.ok, result.stderr
     assert result.stdout.strip() == "BLOCKED"
 

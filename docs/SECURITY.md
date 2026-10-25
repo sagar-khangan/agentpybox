@@ -1,6 +1,6 @@
-# AgentHaven threat model and security boundaries
+# AgentPyBox threat model and security boundaries
 
-AgentHaven is designed for **one trusted local OS user**. It is **not** a hardened solution for hostile generated code or multi-tenant use. The executable and its package dependencies run with the current user's privileges at the host kernel boundary.
+AgentPyBox is designed for **one trusted local OS user**. It is **not** a hardened solution for hostile generated code or multi-tenant use. The executable and its package dependencies run with the current user's privileges at the host kernel boundary.
 
 ## Current controls
 - Bubblewrap user, mount, PID, network and other namespace separation (`--unshare-all`).

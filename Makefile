@@ -4,7 +4,7 @@ include Makefile.release
 .DEFAULT_GOAL := help
 
 UV := uv
-AGENTHAVEN := $(UV) run agenthaven
+AGENTPYBOX := $(UV) run agentpybox
 
 INPUT_DIR := input
 OUTPUT_DIR := output
@@ -21,7 +21,7 @@ HOURS := 24
 
 help:
 	@echo ""
-	@echo "AgentHaven Commands"
+	@echo "AgentPyBox Commands"
 	@echo "===================================="
 	@echo "Development"
 	@echo "  make install           Install dependencies"
@@ -69,12 +69,12 @@ format:
 check: lint test
 
 doctor:
-	$(AGENTHAVEN) doctor
+	$(AGENTPYBOX) doctor
 
 demo: demo-sdk
 
 demo-basic:
-	$(AGENTHAVEN) run \
+	$(AGENTPYBOX) run \
 		--env python-basic \
 		--code "print(sum(range(100)))"
 
@@ -86,7 +86,7 @@ demo-multi:
 
 demo-data:
 	@mkdir -p $(OUTPUT_DIR)
-	$(AGENTHAVEN) run \
+	$(AGENTPYBOX) run \
 		--env python-data \
 		--file $(INPUT_DIR)/analyze.py \
 		--upload $(INPUT_DIR)/sales.csv \
@@ -94,12 +94,12 @@ demo-data:
 		--output-dir $(OUTPUT_DIR)
 
 env-data:
-	$(AGENTHAVEN) env create python-pandas \
+	$(AGENTPYBOX) env create python-pandas \
 		--requirements $(INPUT_DIR)/requirements-data.txt
 
 demo-pandas:
 	@mkdir -p $(OUTPUT_DIR)
-	$(AGENTHAVEN) run \
+	$(AGENTPYBOX) run \
 		--env python-pandas \
 		--file $(INPUT_DIR)/pandas_analysis.py \
 		--upload $(INPUT_DIR)/sales.csv \
@@ -109,43 +109,43 @@ demo-pandas:
 		--output-dir $(OUTPUT_DIR)
 
 env-list:
-	$(AGENTHAVEN) env list
+	$(AGENTPYBOX) env list
 
 env-inspect:
 	@test -n "$(ENV)" || (echo "Usage: make env-inspect ENV=python-pandas" && exit 1)
-	$(AGENTHAVEN) env inspect $(ENV)
+	$(AGENTPYBOX) env inspect $(ENV)
 
 env-find:
 	@test -n "$(PACKAGE)" || (echo "Usage: make env-find PACKAGE=pandas" && exit 1)
-	$(AGENTHAVEN) env find --package $(PACKAGE)
+	$(AGENTPYBOX) env find --package $(PACKAGE)
 
 env-delete:
 	@test -n "$(ENV)" || (echo "Usage: make env-delete ENV=python-pandas" && exit 1)
-	$(AGENTHAVEN) env delete $(ENV)
+	$(AGENTPYBOX) env delete $(ENV)
 
 run-script:
 	@test -n "$(FILE)" || (echo "Usage: make run-script FILE=input/script.py" && exit 1)
-	$(AGENTHAVEN) run --env $(PROFILE) --file $(FILE)
+	$(AGENTPYBOX) run --env $(PROFILE) --file $(FILE)
 
 run-code:
 	@test -n "$(CODE)" || (echo 'Usage: make run-code CODE="print(42)"' && exit 1)
-	$(AGENTHAVEN) run --env $(PROFILE) --code '$(CODE)'
+	$(AGENTPYBOX) run --env $(PROFILE) --code '$(CODE)'
 
 sandboxes:
-	$(AGENTHAVEN) list
+	$(AGENTPYBOX) list
 
 create-sandbox:
-	$(AGENTHAVEN) create --env $(PROFILE) --ttl $(TTL)
+	$(AGENTPYBOX) create --env $(PROFILE) --ttl $(TTL)
 
 history:
 	@test -n "$(SID)" || (echo "Usage: make history SID=<sandbox-id>" && exit 1)
-	$(AGENTHAVEN) history $(SID)
+	$(AGENTPYBOX) history $(SID)
 
 metrics:
-	$(AGENTHAVEN) metrics --hours $(HOURS)
+	$(AGENTPYBOX) metrics --hours $(HOURS)
 
 cleanup:
-	$(AGENTHAVEN) cleanup
+	$(AGENTPYBOX) cleanup
 
 clean:
 	rm -rf .pytest_cache .ruff_cache

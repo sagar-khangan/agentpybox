@@ -1,6 +1,6 @@
 import pytest
 
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 
 def test_registry_empty_requirements(tmp_path):

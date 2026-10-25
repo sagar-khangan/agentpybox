@@ -2,8 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agenthaven import SandboxError, SandboxManager
-from agenthaven import manager as manager_module
+from agentpybox import SandboxError, SandboxManager
+from agentpybox import manager as manager_module
 
 
 def test_multiple_sessions_and_files(tmp_path, monkeypatch):

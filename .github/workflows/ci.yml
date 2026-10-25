@@ -26,7 +26,7 @@ jobs:
       - name: Build distributions
         run: uv build
       - name: CLI smoke test
-        run: uv run agenthaven env list
+        run: uv run agentpybox env list
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:

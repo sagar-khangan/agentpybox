@@ -1,7 +1,7 @@
 
-# AgentHaven Architecture
+# AgentPyBox Architecture
 
-AgentHaven is a local-first, Dockerless Python execution
+AgentPyBox is a local-first, Dockerless Python execution
 sandbox with a Python SDK and CLI.
 
 It has no HTTP service or agent-framework dependency.
@@ -11,7 +11,7 @@ It has no HTTP service or agent-framework dependency.
 ```mermaid
 flowchart TB
     User["Developer / AI Agent"]
-    CLI["AgentHaven CLI"]
+    CLI["AgentPyBox CLI"]
     SDK["Python SDK"]
     Manager["SandboxManager"]
     Registry["Environment Registry"]
@@ -78,7 +78,7 @@ active sandbox session.
 
 ## Security limitations
 
-AgentHaven is a local developer prototype, not a security-
+AgentPyBox is a local developer prototype, not a security-
 certified isolation system.
 
 - Bubblewrap shares the host kernel.
@@ -88,7 +88,7 @@ certified isolation system.
 - Arbitrary package installation requires operator approval.
 - The registry should not be exposed to untrusted callers.
 - No network service or multi-tenant authentication exists.
-- Do not run hostile code or operate AgentHaven as root.
+- Do not run hostile code or operate AgentPyBox as root.
 
 ## Observability
 

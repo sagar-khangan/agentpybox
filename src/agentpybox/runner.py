@@ -1,4 +1,4 @@
-"""AgentHaven Bubblewrap execution engine.
+"""AgentPyBox Bubblewrap execution engine.
 
 Supports:
 - Built-in Python profiles
@@ -207,7 +207,7 @@ def execute(
 
     policy, env_path = _runtime_for(profile, root)
 
-    script_name = f"agenthaven_{uuid4().hex}.py"
+    script_name = f"agentpybox_{uuid4().hex}.py"
     script = workspace / script_name
 
     fd = os.open(

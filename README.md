@@ -1,13 +1,13 @@
-# AgentHaven
+# AgentPyBox
 
 **Dockerless, local-first Python sandboxes — Python SDK + CLI with reusable dependency environments.**
 
-AgentHaven creates isolated Python execution sessions on Linux using Bubblewrap. It supports multiple persistent sandboxes, text/binary artifact transfers, execution history, TTL-based cleanup, and a registry of reusable Python virtual environments prepared from `requirements.txt` files.
+AgentPyBox creates isolated Python execution sessions on Linux using Bubblewrap. It supports multiple persistent sandboxes, text/binary artifact transfers, execution history, TTL-based cleanup, and a registry of reusable Python virtual environments prepared from `requirements.txt` files.
 
 **No FastAPI server, no HTTP service, no Docker, and no AI-agent framework required.** Other Python applications (including AI agents) can use the SDK directly.
 
 > [!WARNING]
-> **Security status: LOCAL DEVELOPER PROTOTYPE — NOT A HARDENED UNTRUSTED-CODE SANDBOX.** AgentHaven uses Bubblewrap namespaces, limited mounts, disabled sandbox networking, execution timeouts, and per-process `prlimit` controls. These reduce accidental exposure but **do not guarantee containment of malicious code**. In particular, there are no enforced cgroup-v2 whole-process-tree quotas, no application-specific seccomp policy, and no hard disk quota. The sandbox shares the host kernel and the same OS user for writable workspace access. Dependencies are installed **outside** the sandbox by `uv`; do not allow untrusted agents to register packages automatically. Do not run as root or on a sensitive host with unreviewed generated code.
+> **Security status: LOCAL DEVELOPER PROTOTYPE — NOT A HARDENED UNTRUSTED-CODE SANDBOX.** AgentPyBox uses Bubblewrap namespaces, limited mounts, disabled sandbox networking, execution timeouts, and per-process `prlimit` controls. These reduce accidental exposure but **do not guarantee containment of malicious code**. In particular, there are no enforced cgroup-v2 whole-process-tree quotas, no application-specific seccomp policy, and no hard disk quota. The sandbox shares the host kernel and the same OS user for writable workspace access. Dependencies are installed **outside** the sandbox by `uv`; do not allow untrusted agents to register packages automatically. Do not run as root or on a sensitive host with unreviewed generated code.
 >
 > **Security details:** [Security threat model](docs/SECURITY.md) · [Control-by-control security matrix](docs/SECURITY_MATRIX.md). Run `make security-audit` to inspect host capabilities and `make test-security` for regression probes. Neither command certifies malicious-code containment.
 
@@ -34,13 +34,13 @@ AgentHaven creates isolated Python execution sessions on Linux using Bubblewrap.
 - **Dynamic environment registry:** create a reusable virtual environment with `uv`, list and inspect its installed packages, find compatible environments, and delete unused ones.
 - **Built-in default:** `python-basic` uses Ubuntu's `/usr/bin/python3` and the standard library. `python-data` and `python-test` are legacy standard-library policies, **not** bundled pandas or pytest environments.
 - **SQLite observability:** execution IDs, source hashes, duration, exit status, timeouts, truncation and p50/p95/p99 wall-clock metrics.
-- **No daemon:** expired sessions are reclaimed when AgentHaven is used or `cleanup` runs, not continuously in the background.
+- **No daemon:** expired sessions are reclaimed when AgentPyBox is used or `cleanup` runs, not continuously in the background.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    U[Developer or AI Agent] --> CLI[agenthaven CLI]
+    U[Developer or AI Agent] --> CLI[agentpybox CLI]
     U --> SDK[Python SDK]
     CLI --> M[SandboxManager]
     SDK --> M
@@ -78,20 +78,20 @@ From the repository root:
 
 ```bash
 uv sync --extra dev
-uv run agenthaven doctor
-uv run agenthaven profiles
-uv run agenthaven env list
-uv run agenthaven run --env python-basic --code "print(2 + 2)"
+uv run agentpybox doctor
+uv run agentpybox profiles
+uv run agentpybox env list
+uv run agentpybox run --env python-basic --code "print(2 + 2)"
 make check
 ```
 
-The repository's **host development `.venv`** is different from the **execution environments** in AgentHaven's registry. You do not need to activate `.venv` when running commands through `uv run`.
+The repository's **host development `.venv`** is different from the **execution environments** in AgentPyBox's registry. You do not need to activate `.venv` when running commands through `uv run`.
 
 ### Project layout
 
 ```text
-agenthaven/
-├── src/agenthaven/
+agentpybox/
+├── src/agentpybox/
 │   ├── __init__.py
 │   ├── cli.py
 │   ├── manager.py
@@ -118,7 +118,7 @@ agenthaven/
 └── pyproject.toml
 ```
 
-`input/` and `output/` are conventions for demo files, **not** special AgentHaven mounts. Inputs are explicitly uploaded by the CLI/SDK; outputs must be explicitly downloaded before a one-time sandbox is destroyed.
+`input/` and `output/` are conventions for demo files, **not** special AgentPyBox mounts. Inputs are explicitly uploaded by the CLI/SDK; outputs must be explicitly downloaded before a one-time sandbox is destroyed.
 
 ## Quick start: one-command execution
 
@@ -126,7 +126,7 @@ Place `analyze.py` and `sales.csv` in `input/`. The script should read `sales.cs
 
 ```bash
 mkdir -p input output
-uv run agenthaven run \
+uv run agentpybox run \
   --env python-data \
   --file input/analyze.py \
   --upload input/sales.csv \
@@ -141,7 +141,7 @@ The CLI creates a temporary sandbox, uploads `sales.csv` under its **basename**,
 Run inline code without files:
 
 ```bash
-uv run agenthaven run --env python-basic --code "print(sum(range(100)))"
+uv run agentpybox run --env python-basic --code "print(sum(range(100)))"
 ```
 
 For multiple inputs, supply `--upload` more than once. Likewise, use multiple `--download` options for multiple artifacts.
@@ -164,7 +164,7 @@ Unpinned versions are convenient for demonstrations. **Pin and review versions f
 ### 2. Create a registered environment
 
 ```bash
-uv run agenthaven env create python-pandas \
+uv run agentpybox env create python-pandas \
   --requirements input/requirements-data.txt
 ```
 
@@ -173,10 +173,10 @@ This installs packages **once** in a cached virtual environment. Existing ready 
 ### 3. Discover installed capabilities
 
 ```bash
-uv run agenthaven env list
-uv run agenthaven env inspect python-pandas
-uv run agenthaven env find --package pandas
-uv run agenthaven env find --package pandas --package numpy
+uv run agentpybox env list
+uv run agentpybox env inspect python-pandas
+uv run agentpybox env find --package pandas
+uv run agentpybox env find --package pandas --package numpy
 ```
 
 `env find` matches installed distribution names from the registry, **not semantic descriptions** such as “machine learning.” A registered environment may include additional transitive dependencies.
@@ -184,14 +184,14 @@ uv run agenthaven env find --package pandas --package numpy
 ### 4. Execute in that environment
 
 ```bash
-uv run agenthaven run --env python-pandas \
+uv run agentpybox run --env python-pandas \
   --code "import pandas, numpy; print(pandas.__version__, numpy.__version__)"
 ```
 
 For the full pandas example (requires `customer_id` in both CSV files):
 
 ```bash
-uv run agenthaven run \
+uv run agentpybox run \
   --env python-pandas \
   --file input/pandas_analysis.py \
   --upload input/sales.csv \
@@ -206,19 +206,19 @@ This demonstrates actual third-party imports, CSV joining/aggregation, output ar
 ### 5. Delete an unused environment
 
 ```bash
-uv run agenthaven env delete python-pandas
+uv run agentpybox env delete python-pandas
 ```
 
 Deletion is refused while an active session references the environment. Deleted environments can be recreated from a requirements file.
 
-> **Compatibility:** Registered environments currently use Ubuntu's `/usr/bin/python3` by default, which may have a different version from the Python interpreter used by `uv` for AgentHaven's own CLI. Virtual-environment symlinks and native packages can have platform dependencies. A successful `env create` only proves installation; verify actual imports with `agenthaven run --env ...`.
+> **Compatibility:** Registered environments currently use Ubuntu's `/usr/bin/python3` by default, which may have a different version from the Python interpreter used by `uv` for AgentPyBox's own CLI. Virtual-environment symlinks and native packages can have platform dependencies. A successful `env create` only proves installation; verify actual imports with `agentpybox run --env ...`.
 
 ## Persistent sandbox sessions (CLI)
 
 Use a persistent session when you need multiple executions or want to inspect files between commands.
 
 ```bash
-uv run agenthaven create --env python-basic --ttl 300
+uv run agentpybox create --env python-basic --ttl 300
 ```
 
 Copy the `id` from the JSON output, then set:
@@ -226,35 +226,35 @@ Copy the `id` from the JSON output, then set:
 ```bash
 SID="YOUR-SANDBOX-ID"
 
-uv run agenthaven put "$SID" input/sales.csv
-uv run agenthaven execute "$SID" --file input/analyze.py
-uv run agenthaven files "$SID"
-uv run agenthaven get "$SID" report.txt output/report.txt
-uv run agenthaven history "$SID"
-uv run agenthaven inspect "$SID"
-uv run agenthaven delete "$SID"
+uv run agentpybox put "$SID" input/sales.csv
+uv run agentpybox execute "$SID" --file input/analyze.py
+uv run agentpybox files "$SID"
+uv run agentpybox get "$SID" report.txt output/report.txt
+uv run agentpybox history "$SID"
+uv run agentpybox inspect "$SID"
+uv run agentpybox delete "$SID"
 ```
 
 Useful general commands:
 
 ```bash
-uv run agenthaven list
-uv run agenthaven list --status created
-uv run agenthaven metrics --hours 24
-uv run agenthaven cleanup
-uv run agenthaven --help
-uv run agenthaven run --help
-uv run agenthaven env --help
+uv run agentpybox list
+uv run agentpybox list --status created
+uv run agentpybox metrics --hours 24
+uv run agentpybox cleanup
+uv run agentpybox --help
+uv run agentpybox run --help
+uv run agentpybox env --help
 ```
 
 The one-time `run` command is best for most tasks; persistent sessions are best for interactive or multistep workflows.
 
 ## Python SDK
 
-You can embed AgentHaven into any Python application without starting a server.
+You can embed AgentPyBox into any Python application without starting a server.
 
 ```python
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 manager = SandboxManager()
 
@@ -262,7 +262,7 @@ print(manager.environments.list())
 print(manager.environments.find(["pandas"]))
 
 with manager.sandbox(profile="python-basic", ttl_seconds=300) as box:
-    box.put_text("input.txt", "hello from AgentHaven")
+    box.put_text("input.txt", "hello from AgentPyBox")
 
     result = box.execute(
         "from pathlib import Path\n"
@@ -339,8 +339,8 @@ Run `make help` for the complete menu. For multi-input tasks, use `make demo-pan
 Execution records are retained in SQLite after a sandbox is terminated. Fields include execution ID, sandbox ID, environment/profile, timestamp, source-code SHA-256 hash, exit code, wall-clock duration, timeout and output-truncation flags.
 
 ```bash
-uv run agenthaven metrics --hours 24
-uv run agenthaven history "$SID"
+uv run agentpybox metrics --hours 24
+uv run agentpybox history "$SID"
 ```
 
 Metrics include execution counts, success/failure/timeout counts, success percentage and p50/p95/p99 duration. **CPU usage, peak RSS and comprehensive process-tree telemetry are not currently collected.** Full executed source, stdout and stderr are not retained in SQLite.
@@ -348,8 +348,8 @@ Metrics include execution counts, success/failure/timeout counts, success percen
 State and registered environments are typically located at:
 
 ```text
-~/.local/share/agenthaven/
-├── agenthaven.sqlite3
+~/.local/share/agentpybox/
+├── agentpybox.sqlite3
 ├── environments/
 │   └── python-pandas/
 │       ├── metadata.json
@@ -376,9 +376,9 @@ If running agent-generated code, keep human review enabled and do not grant the 
 
 ## Troubleshooting
 
-**`uv run` cannot find `agenthaven`** — Run from the repository root, where `pyproject.toml` is present, and execute `uv sync --extra dev`. To install a command accessible from other directories, use `uv tool install --editable .` from the project root.
+**`uv run` cannot find `agentpybox`** — Run from the repository root, where `pyproject.toml` is present, and execute `uv sync --extra dev`. To install a command accessible from other directories, use `uv tool install --editable .` from the project root.
 
-**`ImportError: cannot import name 'main'`** — Verify `src/agenthaven/cli.py` has `def main(argv=None)` and that `pyproject.toml` points its console script at `agenthaven.cli:main`. Run `uv run agenthaven --help`.
+**`ImportError: cannot import name 'main'`** — Verify `src/agentpybox/cli.py` has `def main(argv=None)` and that `pyproject.toml` points its console script at `agentpybox.cli:main`. Run `uv run agentpybox --help`.
 
 **`No such file or directory: sales.csv`** — Local `--upload` paths must exist. Use `--upload input/sales.csv`; inside the sandbox the file is named `sales.csv`.
 
@@ -386,9 +386,9 @@ If running agent-generated code, keep human review enabled and do not grant the 
 
 **Artifact download fails** — The script must create the named artifact in its working directory before the one-time sandbox terminates. Check `stderr` and exit code first.
 
-**Registered environment exists but import fails** — Test `uv run agenthaven run --env ENV --code "import PACKAGE"`; inspect the registry with `env inspect`. `env create` does not itself verify Bubblewrap runtime compatibility.
+**Registered environment exists but import fails** — Test `uv run agentpybox run --env ENV --code "import PACKAGE"`; inspect the registry with `env inspect`. `env create` does not itself verify Bubblewrap runtime compatibility.
 
-**Bubblewrap namespace/AppArmor failure** — Run `uv run agenthaven doctor`. On Ubuntu, use supported Bubblewrap/AppArmor configuration; do not disable host namespace protections globally.
+**Bubblewrap namespace/AppArmor failure** — Run `uv run agentpybox doctor`. On Ubuntu, use supported Bubblewrap/AppArmor configuration; do not disable host namespace protections globally.
 
 **`make check` tries importing FastAPI** — Remove obsolete tests from the older HTTP-server architecture. The current project has no FastAPI dependency.
 
@@ -424,7 +424,7 @@ make demo-pandas
 
 ## Developer and AI Agent Integration
 
-AgentHaven provides a Python SDK and CLI for integrating
+AgentPyBox provides a Python SDK and CLI for integrating
 isolated code execution into applications and AI agents.
 
 See the [Integration Guide](docs/INTEGRATION_GUIDE.md) for:
@@ -440,4 +440,4 @@ See the [Integration Guide](docs/INTEGRATION_GUIDE.md) for:
 
 ---
 
-AgentHaven is designed as an **execution building block**, not an AI-agent framework: any Python caller can select a registered environment, create a sandbox, execute code, retrieve artifacts and inspect results without an HTTP server or Docker.
+AgentPyBox is designed as an **execution building block**, not an AI-agent framework: any Python caller can select a registered environment, create a sandbox, execute code, retrieve artifacts and inspect results without an HTTP server or Docker.

@@ -70,7 +70,7 @@ def execute(
 
     env = EnvironmentRegistry(root).mount(profile) if root is not None else None
 
-    script = workspace / f"agenthaven_{uuid4().hex}.py"
+    script = workspace / f"agentpybox_{uuid4().hex}.py"
 
     fd = os.open(
         script,

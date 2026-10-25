@@ -4,7 +4,7 @@ test-security:
 	uv run --extra dev pytest -v tests/test_security_regression.py tests/test_security_audit.py
 
 security-audit:
-	uv run python -m agenthaven.security_audit
+	uv run python -m agentpybox.security_audit
 
 benchmark:
 	uv run python examples/benchmark.py --runs 20 --warmups 3 --output output/benchmark.json

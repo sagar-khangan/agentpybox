@@ -1,4 +1,4 @@
-# AgentHaven Security Control Matrix
+# AgentPyBox Security Control Matrix
 
 **Classification:** Local developer prototype / reviewed code only. **Not certified for hostile, multi-tenant or unreviewed autonomous code execution.**
 
@@ -20,10 +20,10 @@ This matrix reflects the current Bubblewrap-based runner and registered-environm
 | Output-size limit | Implemented return limit | Bounded stdout/stderr reads | Output-truncation test | Temporary capture files can grow while process runs; not bounded at write time |
 | File-size and FD limits | Implemented per process | `prlimit --fsize`, `--nofile`, `--core` | Inspect runner flags; targeted limit tests | Not full workspace disk quota or process-tree quota |
 | Artifact name/size checks | Implemented in SDK | Flat filenames; single-transfer cap; some descriptor-relative and no-follow operations | SDK file tests | Sandbox code can create additional files; hostile concurrent filesystem modifications may race checks |
-| Sandbox TTL | Implemented on access/cleanup | SQLite expiry timestamps; `SandboxManager.cleanup()` | Lifecycle tests; `agenthaven cleanup` | No always-running cleanup service; expired sessions persist until next management action |
-| Persistent audit data | Partial | SQLite records execution ID, hash, timestamps, exit, timeout, truncated, wall time | `agenthaven history`, `agenthaven metrics` | stdout/stderr not retained, no immutable audit log, CPU and peak RSS not collected |
+| Sandbox TTL | Implemented on access/cleanup | SQLite expiry timestamps; `SandboxManager.cleanup()` | Lifecycle tests; `agentpybox cleanup` | No always-running cleanup service; expired sessions persist until next management action |
+| Persistent audit data | Partial | SQLite records execution ID, hash, timestamps, exit, timeout, truncated, wall time | `agentpybox history`, `agentpybox metrics` | stdout/stderr not retained, no immutable audit log, CPU and peak RSS not collected |
 | Inter-process coordination | Implemented for local CLI | File lock serializes execution/management operations | Multi-process smoke tests | Not distributed locking or multi-host orchestration |
-| cgroup-v2 CPU/RAM/PID limits | **Not implemented** | None in current executor | `make security-audit` reports detection and `cgroup_limits_enforced_by_agenthaven: false` | No guaranteed total resource quota across descendants |
+| cgroup-v2 CPU/RAM/PID limits | **Not implemented** | None in current executor | `make security-audit` reports detection and `cgroup_limits_enforced_by_agentpybox: false` | No guaranteed total resource quota across descendants |
 | Application-specific seccomp policy | **Not implemented** | None | Code/config review | Broader syscall access than a tightly hardened sandbox |
 | Hard filesystem quota | **Not implemented** | None | Code/config review | Workspace may exhaust available filesystem space |
 | Strong process-tree cleanup | **Not guaranteed** | Process-group kill on timeout and Bubblewrap parent death | Timeout and descendant tests | Deliberately detached children can defeat simple process-group cleanup |
@@ -33,27 +33,27 @@ This matrix reflects the current Bubblewrap-based runner and registered-environm
 
 - **Implemented:** mechanism is present in the project, not a security certification.
 - **Partially implemented:** specific functionality exists but has known enforcement gaps.
-- **Operator requirement:** safety depends on local decisions or permissions outside AgentHaven.
+- **Operator requirement:** safety depends on local decisions or permissions outside AgentPyBox.
 - **Not implemented:** no effective corresponding control is provided.
 - **Tested on host:** only claim this after running the test successfully on the actual Linux machine; a skipped test gives no positive evidence.
 
 ## Validation checklist (Ubuntu)
 
-Run from the AgentHaven repository:
+Run from the AgentPyBox repository:
 
 ```bash
-uv run agenthaven doctor
+uv run agentpybox doctor
 make security-audit
 make test-security
 make check
-uv run agenthaven run --env python-basic --code "print('isolated execution smoke test')"
+uv run agentpybox run --env python-basic --code "print('isolated execution smoke test')"
 ```
 
 For registered package environments, also test the specific environment and a representative import:
 
 ```bash
-uv run agenthaven env list
-uv run agenthaven run --env python-pandas --code "import pandas; print(pandas.__version__)"
+uv run agentpybox env list
+uv run agentpybox run --env python-pandas --code "import pandas; print(pandas.__version__)"
 ```
 
 Record **date, OS/kernel, Bubblewrap version, AppArmor mode, skipped tests, and actual test results** when publishing security claims. Avoid describing cgroup availability as cgroup enforcement. `make security-audit` is a capability inventory, not a penetration test.

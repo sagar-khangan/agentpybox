@@ -1,4 +1,4 @@
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 manager = SandboxManager()
 

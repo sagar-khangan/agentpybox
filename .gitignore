@@ -219,7 +219,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# AgentHaven runtime
+# AgentPyBox runtime
 .runtime/
 .sandboxes/
 *.sqlite3

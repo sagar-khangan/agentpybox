@@ -1,6 +1,6 @@
-# AgentHaven v1.0.0 — First Public Release
+# AgentPyBox v1.0.0 — First Public Release
 
-AgentHaven is a lightweight, Dockerless Python execution sandbox for local development and AI-agent experimentation.
+AgentPyBox is a lightweight, Dockerless Python execution sandbox for local development and AI-agent experimentation.
 
 This first release introduces a standalone Python SDK and CLI, built on Linux Bubblewrap and SQLite, with reusable Python environments managed using `uv`.
 
@@ -18,19 +18,19 @@ This first release introduces a standalone Python SDK and CLI, built on Linux Bu
 
 ```bash
 uv sync --extra dev
-uv run agenthaven doctor
-uv run agenthaven run --code "print('Hello from AgentHaven')"
+uv run agentpybox doctor
+uv run agentpybox run --code "print('Hello from AgentPyBox')"
 ```
 
 Register a reusable Python environment:
 
 ```bash
-uv run agenthaven env create python-pandas \
+uv run agentpybox env create python-pandas \
   --requirements input/requirements-data.txt
 
-uv run agenthaven env inspect python-pandas
+uv run agentpybox env inspect python-pandas
 
-uv run agenthaven run \
+uv run agentpybox run \
   --env python-pandas \
   --code "import pandas; print(pandas.__version__)"
 ```
@@ -44,7 +44,7 @@ uv run agenthaven run \
 
 ## Security Status
 
-AgentHaven is a **local developer prototype, not a hardened security boundary for hostile code**.
+AgentPyBox is a **local developer prototype, not a hardened security boundary for hostile code**.
 
 It provides Linux namespace isolation, restricted filesystem mounts, network isolation and resource limits, but does not currently enforce comprehensive cgroup-v2 process-tree budgets, seccomp restrictions or hard disk quotas.
 

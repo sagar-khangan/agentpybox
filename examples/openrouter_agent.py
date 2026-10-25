@@ -1,4 +1,4 @@
-"""OpenRouter coding agent using the AgentHaven Python SDK.
+"""OpenRouter coding agent using the AgentPyBox Python SDK.
 
 No FastAPI, HTTP sandbox service, LangChain or LangGraph required.
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import httpx
 
-from agenthaven import SandboxManager
+from agentpybox import SandboxManager
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -39,7 +39,7 @@ You are a Python coding assistant.
 Generate Python code that solves the user's task.
 
 Execution environment:
-- Python runs inside an isolated AgentHaven sandbox.
+- Python runs inside an isolated AgentPyBox sandbox.
 - No network access during sandbox execution.
 - No pip installation inside the sandbox.
 - No subprocess or shell commands.
@@ -57,7 +57,7 @@ Do not include Markdown fences or explanations.
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="OpenRouter agent powered by AgentHaven"
+        description="OpenRouter agent powered by AgentPyBox"
     )
 
     parser.add_argument(
@@ -69,7 +69,7 @@ def parse_args():
     parser.add_argument(
         "--env",
         default="python-basic",
-        help="Registered AgentHaven environment",
+        help="Registered AgentPyBox environment",
     )
 
     parser.add_argument(
@@ -129,7 +129,7 @@ def parse_args():
 
 
 def print_environments(manager):
-    print("\nAvailable AgentHaven environments:\n")
+    print("\nAvailable AgentPyBox environments:\n")
 
     for env in manager.environments.list():
         print(f"- {env['name']} [{env.get('status', 'unknown')}]")
@@ -187,7 +187,7 @@ def generate_code(
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "X-OpenRouter-Title": "AgentHaven",
+            "X-OpenRouter-Title": "AgentPyBox",
         },
         json={
             "model": model,
@@ -239,10 +239,10 @@ def approve_execution(code, auto_approve=False):
     print("=" * 65)
 
     if auto_approve:
-        print("\n[AUTO-APPROVED] Executing in AgentHaven")
+        print("\n[AUTO-APPROVED] Executing in AgentPyBox")
         return True
 
-    answer = input("\nApprove execution inside AgentHaven? [y/N]: ")
+    answer = input("\nApprove execution inside AgentPyBox? [y/N]: ")
     return answer.strip().lower() in ("y", "yes")
 
 
@@ -260,7 +260,7 @@ def validate_files(args):
         if (
             Path(name).name != name
             or name in (".", "..")
-            or name.startswith("agenthaven_")
+            or name.startswith("agentpybox_")
         ):
             raise ValueError(f"Invalid artifact filename: {name}")
 
@@ -315,7 +315,7 @@ def run_agent(args):
     print(f"Task: {task}")
 
     # OpenRouter HTTP is called by the host-side agent.
-    # Generated code executes separately inside AgentHaven.
+    # Generated code executes separately inside AgentPyBox.
     with httpx.Client(timeout=60) as client:
         code = generate_code(
             client,
@@ -417,7 +417,7 @@ def run_agent(args):
                 if sandbox is not None:
                     print(f"\n[SANDBOX TERMINATED] {sandbox.id}")
 
-            print("\nAgentHaven metrics:")
+            print("\nAgentPyBox metrics:")
             print(manager.metrics(hours=24))
 
 

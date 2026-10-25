@@ -1,4 +1,4 @@
-# AgentHaven release-preparation overlay
+# AgentPyBox release-preparation overlay
 
 This overlay intentionally does NOT replace your current `runner.py`, `manager.py`,
 `cli.py`, `environments.py`, `Makefile`, `pyproject.toml` or `README.md`.
