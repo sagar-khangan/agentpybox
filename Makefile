@@ -1,4 +1,6 @@
 
+include Makefile.release
+ 
 .DEFAULT_GOAL := help
 
 UV := uv
