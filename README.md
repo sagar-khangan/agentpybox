@@ -7,7 +7,23 @@ AgentHaven creates isolated Python execution sessions on Linux using Bubblewrap.
 **No FastAPI server, no HTTP service, no Docker, and no AI-agent framework required.** Other Python applications (including AI agents) can use the SDK directly.
 
 > [!WARNING]
-> **Security:** AgentHaven is a **single-user local development prototype**, not a hardened malicious-code sandbox. Bubblewrap shares the host kernel, and the current implementation does **not** provide cgroup-v2 process-tree quotas, comprehensive filesystem quotas, seccomp hardening, or strong protection against hostile packages. Package installation happens **outside** Bubblewrap and may execute installation-time code. Only a trusted local operator should create environments or approve dependencies. Do not run as root, expose it to untrusted users, or blindly execute unreviewed LLM-generated code on a sensitive machine.
+> **Security status: LOCAL DEVELOPER PROTOTYPE — NOT A HARDENED UNTRUSTED-CODE SANDBOX.** AgentHaven uses Bubblewrap namespaces, limited mounts, disabled sandbox networking, execution timeouts, and per-process `prlimit` controls. These reduce accidental exposure but **do not guarantee containment of malicious code**. In particular, there are no enforced cgroup-v2 whole-process-tree quotas, no application-specific seccomp policy, and no hard disk quota. The sandbox shares the host kernel and the same OS user for writable workspace access. Dependencies are installed **outside** the sandbox by `uv`; do not allow untrusted agents to register packages automatically. Do not run as root or on a sensitive host with unreviewed generated code.
+>
+> **Security details:** [Security threat model](docs/SECURITY.md) · [Control-by-control security matrix](docs/SECURITY_MATRIX.md). Run `make security-audit` to inspect host capabilities and `make test-security` for regression probes. Neither command certifies malicious-code containment.
+
+### Security at a glance
+
+| Area | Current implementation | What it does **not** guarantee |
+|---|---|---|
+| Isolation | Bubblewrap Linux namespaces; restricted read-only system/runtime mounts; writable per-session workspace | No separate kernel, VM or OS-user boundary for workspace access |
+| Network | Network namespace unshared for sandbox execution | No independently verified guarantee against every kernel or configuration escape |
+| Resource controls | Wall-clock timeout plus `prlimit` CPU, address-space, file-size and file-descriptor limits | No enforced cgroup memory, PID, CPU or whole-process-tree budget |
+| Workspace / artifacts | Per-session workspace, filename validation, bounded CLI/SDK transfers | No hard disk quota; no complete defense against hostile filesystem races |
+| Reusable environments | `uv`-prepared virtual environments mounted read-only at execution | Package installation itself runs outside Bubblewrap; no trusted-package attestation |
+| Logging | SQLite execution metadata, source hash and wall-time metrics | Not persistent stdout/stderr, CPU/RSS measurement or an immutable audit trail |
+| Access | Local-only Python SDK and CLI | No multi-user authorization or remote API security model |
+
+**Intended use:** a single trusted local developer testing reviewed code. A `-y` auto-approve flag in an example agent does not make generated code safe to execute.
 
 ## Features
 
@@ -95,7 +111,9 @@ agenthaven/
 │   └── multi_sandbox_demo.py
 ├── tests/
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   ├── SECURITY.md
+│   └── SECURITY_MATRIX.md
 ├── Makefile
 └── pyproject.toml
 ```
@@ -342,6 +360,19 @@ State and registered environments are typically located at:
 ```
 
 Do not commit this state directory, virtual environments, secrets, `.env` files or user-generated artifacts to Git.
+
+## Security verification and interpretation
+
+Security controls and host capabilities are different concepts. `security-audit` reports which Linux features exist; it does **not** enable missing limits or prove isolation. Security regression tests exercise representative behaviors on the machine running them and may skip when Bubblewrap/user namespaces are unavailable.
+
+```bash
+make security-audit
+make test-security
+```
+
+For each control, including whether it is configured, how to test it and what remains missing, see [`docs/SECURITY_MATRIX.md`](docs/SECURITY_MATRIX.md). For the threat model and responsible-use expectations, see [`docs/SECURITY.md`](docs/SECURITY.md).
+
+If running agent-generated code, keep human review enabled and do not grant the agent environment-creation privileges. If you need to run hostile or fully autonomous unreviewed code, use a dedicated VM/microVM or another independently hardened isolation solution.
 
 ## Troubleshooting
 
