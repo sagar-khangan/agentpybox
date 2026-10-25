@@ -143,6 +143,7 @@ def _command(
         "--",
         "bwrap",
         "--unshare-all",
+        "--clearenv",
         "--die-with-parent",
         "--new-session",
         "--clearenv",
