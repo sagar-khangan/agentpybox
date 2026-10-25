@@ -1,4 +1,16 @@
-"""Bubblewrap Python executor. Linux only; not a hostile-code security guarantee."""
+"""AgentHaven Bubblewrap execution engine.
+
+Supports:
+- Built-in Python profiles
+- Registered Python virtual environments
+- Read-only dependency environments
+- Persistent per-sandbox workspaces
+- Execution timeouts and output capture
+
+Linux only. Intended for controlled local development.
+Not hardened for arbitrary hostile code.
+"""
+
 import os
 import shutil
 import signal
@@ -8,39 +20,202 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+from .environments import EnvironmentRegistry
+
 
 class RunnerUnavailable(RuntimeError):
-    pass
+    """Sandbox execution prerequisites are unavailable."""
 
 
 PROFILES = {
-    # This is the *system* Python, not the uv virtualenv.
-    "python-basic": {"timeout": 5, "memory_mb": 512, "description": "stdlib scripts"},
-    "python-data": {"timeout": 10, "memory_mb": 512, "description": "stdlib csv, json, sqlite, statistics"},
-    "python-test": {"timeout": 10, "memory_mb": 512, "description": "stdlib unittest/assert tests"},
+    "python-basic": {
+        "timeout": 5,
+        "memory_mb": 512,
+        "cpu_seconds": 3,
+        "description": "Standard-library Python",
+    },
+    "python-data": {
+        "timeout": 10,
+        "memory_mb": 512,
+        "cpu_seconds": 5,
+        "description": "Standard-library data processing",
+    },
+    "python-test": {
+        "timeout": 10,
+        "memory_mb": 512,
+        "cpu_seconds": 5,
+        "description": "Standard-library test execution",
+    },
 }
-MAX_SOURCE = 64 * 1024
-MAX_OUTPUT = 64 * 1024
+
+DEFAULT_REGISTERED_POLICY = {
+    "timeout": 10,
+    "memory_mb": 1024,
+    "cpu_seconds": 10,
+}
+
+MAX_SOURCE_BYTES = 64 * 1024
+MAX_OUTPUT_BYTES = 64 * 1024
+
+SYSTEM_PYTHON = Path("/usr/bin/python3")
 
 
 def available() -> bool:
-    return all(shutil.which(x) for x in ("bwrap", "prlimit")) and Path("/usr/bin/python3").exists()
+    """Check basic Linux runtime prerequisites."""
+    return (
+        os.name == "posix"
+        and shutil.which("bwrap") is not None
+        and shutil.which("prlimit") is not None
+        and SYSTEM_PYTHON.is_file()
+    )
 
 
-def execute(workspace: Path, code: str, profile: str) -> dict:
-    if profile not in PROFILES:
-        raise ValueError(f"Unknown profile: {profile}")
+def _runtime_for(profile: str, root: Path | None):
+    """Resolve runtime policy and optional registered venv."""
+    if profile in PROFILES:
+        return PROFILES[profile], None
+
+    if root is None:
+        raise ValueError("Registry root is required for registered environments")
+
+    registry = EnvironmentRegistry(root)
+    env_path = registry.mount(profile)
+
+    if env_path is None:
+        raise ValueError(f"Registered environment has no virtualenv: {profile}")
+
+    env_path = Path(env_path).resolve()
+
+    if not (env_path / "pyvenv.cfg").is_file():
+        raise RunnerUnavailable(f"Invalid virtual environment: {profile}")
+
+    return DEFAULT_REGISTERED_POLICY, env_path
+
+
+def _command(
+    workspace: Path,
+    script_name: str,
+    policy: dict,
+    env_path: Path | None,
+):
+    """Build the Bubblewrap command."""
+    memory_bytes = policy["memory_mb"] * 1024 * 1024
+    cpu_seconds = policy["cpu_seconds"]
+
+    interpreter = "/usr/bin/python3"
+
+    mounts = [
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind-try",
+        "/bin",
+        "/bin",
+        "--ro-bind-try",
+        "/lib",
+        "/lib",
+        "--ro-bind-try",
+        "/lib64",
+        "/lib64",
+    ]
+
+    if env_path is not None:
+        # Mount the venv at a consistent location.
+        mounts.extend(
+            [
+                "--dir",
+                "/env",
+                "--ro-bind",
+                str(env_path),
+                "/env/venv",
+            ]
+        )
+
+        interpreter = "/env/venv/bin/python"
+
+    return [
+        "prlimit",
+        f"--cpu={cpu_seconds}:{cpu_seconds + 1}",
+        f"--as={memory_bytes}:{memory_bytes}",
+        "--fsize=1048576:1048576",
+        "--nofile=64:64",
+        "--core=0:0",
+        "--",
+        "bwrap",
+        "--unshare-all",
+        "--die-with-parent",
+        "--new-session",
+        "--clearenv",
+        "--setenv",
+        "PATH",
+        "/usr/bin:/bin",
+        "--setenv",
+        "HOME",
+        "/work",
+        "--setenv",
+        "PYTHONDONTWRITEBYTECODE",
+        "1",
+        "--setenv",
+        "PYTHONNOUSERSITE",
+        "1",
+        *mounts,
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+        "--dir",
+        "/work",
+        "--bind",
+        str(workspace),
+        "/work",
+        "--chdir",
+        "/work",
+        "--",
+        interpreter,
+        "-I",
+        f"/work/{script_name}",
+    ]
+
+
+def execute(
+    workspace: Path,
+    code: str,
+    profile: str,
+    root: Path | None = None,
+) -> dict:
+    """Execute Python inside an isolated Bubblewrap workspace.
+
+    Returns:
+        exit_code, stdout, stderr, duration_ms,
+        timed_out, truncated
+    """
     if not available():
-        raise RunnerUnavailable("Install bubblewrap and util-linux (prlimit) on Linux")
-    if len(code.encode("utf-8")) > MAX_SOURCE:
-        raise ValueError("Source exceeds 64 KiB")
-    if workspace.is_symlink() or not workspace.is_dir():
-        raise RunnerUnavailable("Invalid workspace")
+        raise RunnerUnavailable("Bubblewrap, prlimit or /usr/bin/python3 unavailable")
 
-    spec = PROFILES[profile]
-    script = workspace / f"agenthaven_{uuid4().hex}.py"
-    # Explicit exclusive creation; no caller-provided filenames.
-    fd = os.open(script, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    if not isinstance(code, str):
+        raise TypeError("Code must be a string")
+
+    if len(code.encode("utf-8")) > MAX_SOURCE_BYTES:
+        raise ValueError("Source exceeds 64 KiB")
+
+    workspace = Path(workspace).absolute()
+
+    if workspace.is_symlink() or not workspace.is_dir():
+        raise RunnerUnavailable("Invalid sandbox workspace")
+
+    policy, env_path = _runtime_for(profile, root)
+
+    script_name = f"agenthaven_{uuid4().hex}.py"
+    script = workspace / script_name
+
+    fd = os.open(
+        script,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+    )
+
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(code)
@@ -48,48 +223,70 @@ def execute(workspace: Path, code: str, profile: str) -> dict:
         script.unlink(missing_ok=True)
         raise
 
-    cmd = [
-        "prlimit", "--cpu=3:4",
-        f"--as={spec['memory_mb'] * 1024 * 1024}:{spec['memory_mb'] * 1024 * 1024}",
-        "--fsize=1048576:1048576", "--nofile=64:64", "--core=0:0", "--",
-        "bwrap", "--unshare-all", "--die-with-parent", "--new-session",
-        "--clearenv", "--setenv", "PATH", "/usr/bin:/bin",
-        "--setenv", "HOME", "/work", "--setenv", "PYTHONDONTWRITEBYTECODE", "1",
-        "--setenv", "PYTHONNOUSERSITE", "1",
-        "--ro-bind", "/usr", "/usr", "--ro-bind-try", "/bin", "/bin",
-        "--ro-bind-try", "/lib", "/lib", "--ro-bind-try", "/lib64", "/lib64",
-        "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
-        "--dir", "/work", "--bind", str(workspace), "/work", "--chdir", "/work",
-        "--", "/usr/bin/python3", "-I", f"/work/{script.name}",
-    ]
+    command = _command(
+        workspace,
+        script_name,
+        policy,
+        env_path,
+    )
+
     started = time.monotonic()
     timed_out = False
+
     try:
-        # Temporary files prevent an unbounded *memory* buffer. fsize constrains
-        # individual output files, but is not a total disk quota.
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
-            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out,
-                                    stderr=err, start_new_session=True, close_fds=True)
+        with (
+            tempfile.TemporaryFile() as stdout_file,
+            tempfile.TemporaryFile() as stderr_file,
+        ):
             try:
-                proc.wait(timeout=spec["timeout"])
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=stdout_file,
+                    stderr=stderr_file,
+                    start_new_session=True,
+                    close_fds=True,
+                )
+            except OSError as exc:
+                raise RunnerUnavailable(f"Could not launch sandbox: {exc}") from exc
+
+            try:
+                process.wait(timeout=policy["timeout"])
+
             except subprocess.TimeoutExpired:
                 timed_out = True
+
                 try:
-                    os.killpg(proc.pid, signal.SIGKILL)
+                    os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-                proc.wait()
-            out.seek(0)
-            err.seek(0)
-            stdout = out.read(MAX_OUTPUT + 1)
-            stderr = err.read(MAX_OUTPUT + 1)
+
+                process.wait()
+
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+
+            stdout_raw = stdout_file.read(MAX_OUTPUT_BYTES + 1)
+            stderr_raw = stderr_file.read(MAX_OUTPUT_BYTES + 1)
+
             return {
-                "exit_code": proc.returncode,
-                "stdout": stdout[:MAX_OUTPUT].decode("utf-8", errors="replace"),
-                "stderr": stderr[:MAX_OUTPUT].decode("utf-8", errors="replace"),
-                "duration_ms": round((time.monotonic() - started) * 1000, 2),
+                "exit_code": process.returncode,
+                "stdout": stdout_raw[:MAX_OUTPUT_BYTES].decode(
+                    "utf-8", errors="replace"
+                ),
+                "stderr": stderr_raw[:MAX_OUTPUT_BYTES].decode(
+                    "utf-8", errors="replace"
+                ),
+                "duration_ms": round(
+                    (time.monotonic() - started) * 1000,
+                    2,
+                ),
                 "timed_out": timed_out,
-                "truncated": len(stdout) > MAX_OUTPUT or len(stderr) > MAX_OUTPUT,
+                "truncated": (
+                    len(stdout_raw) > MAX_OUTPUT_BYTES
+                    or len(stderr_raw) > MAX_OUTPUT_BYTES
+                ),
             }
+
     finally:
         script.unlink(missing_ok=True)

@@ -1,41 +1,35 @@
-"""Two persistent sessions + binary artifacts + end-to-end cleanup."""
-from pathlib import Path
-from tempfile import TemporaryDirectory
-
 from agenthaven import SandboxManager
 
+manager = SandboxManager()
 
-def main():
-    manager = SandboxManager()
-    first = manager.create("python-data", ttl_seconds=300)
-    second = manager.create("python-test", ttl_seconds=300)
-    print("Sessions:", first.id, second.id)
-    try:
-        first.put_text("sales.csv", "region,amount\nwest,25\neast,30\nwest,15\n")
-        result = first.execute("""import csv
-from pathlib import Path
-with open('sales.csv', newline='') as file:
-    total = sum(int(row['amount']) for row in csv.DictReader(file))
-Path('report.txt').write_text(f'Total: {total}')
-print('Generated report')
-""")
-        print("Data execution:", result.to_dict())
-        assert result.ok, result.stderr
-        with TemporaryDirectory() as folder:
-            target = Path(folder) / "report.txt"
-            first.download("report.txt", target)
-            print("Downloaded:", target.read_text())
+# Discover packages already available.
+matches = manager.environments.find(["boto3", "pydantic"])
 
-        other = second.execute("import unittest\nassert 2 + 2 == 4\nprint('Tests passed')")
-        assert other.ok, other.stderr
-        print("Test execution:", other.stdout.strip())
-        print("First history:", first.history())
-        print("Metrics:", manager.metrics())
-    finally:
-        first.terminate()
-        second.terminate()
-        print("Both sessions terminated")
+if matches:
+    env_name = matches[0]["name"]
+else:
+    # This installation step should be initiated
+    # by a trusted user/operator, not an untrusted agent.
+    manager.create_environment(
+        "python-aws",
+        "input/requirements-aws.txt",
+    )
+    env_name = "python-aws"
 
+# Reuse the registered environment.
+with manager.sandbox(
+    profile=env_name,
+    ttl_seconds=300,
+) as sandbox:
+    result = sandbox.execute(
+        "import boto3\n"
+        "import pydantic\n"
+        "print('boto3:', boto3.__version__)\n"
+        "print('pydantic:', pydantic.__version__)\n"
+    )
 
-if __name__ == "__main__":
-    main()
+    print(result.stdout)
+    print(result.stderr)
+    print("Successful:", result.ok)
+
+print(manager.metrics(hours=24))

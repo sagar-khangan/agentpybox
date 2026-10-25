@@ -30,8 +30,14 @@ def test_execution_history_and_metrics(tmp_path, monkeypatch):
 
     def fake_execute(workspace, code, profile):
         assert workspace.exists()
-        return {"exit_code": 0, "stdout": "42\n", "stderr": "", "duration_ms": 12.5,
-                "timed_out": False, "truncated": False}
+        return {
+            "exit_code": 0,
+            "stdout": "42\n",
+            "stderr": "",
+            "duration_ms": 12.5,
+            "timed_out": False,
+            "truncated": False,
+        }
 
     monkeypatch.setattr(manager_module, "execute", fake_execute)
     result = a.execute("print(42)")
@@ -53,8 +59,10 @@ def test_ttl_and_validation(tmp_path):
         m.create("unknown-profile")
     a = m.create()
     with m.store.locked(), m.store.connect() as db:
-        db.execute("UPDATE sandboxes SET expires_at=? WHERE id=?",
-                   ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), a.id))
+        db.execute(
+            "UPDATE sandboxes SET expires_at=? WHERE id=?",
+            ((datetime.now(UTC) - timedelta(seconds=1)).isoformat(), a.id),
+        )
     assert m.cleanup() == 1
     assert a.info["status"] == "expired"
     with pytest.raises(SandboxError):

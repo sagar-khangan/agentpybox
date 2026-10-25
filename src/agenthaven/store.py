@@ -1,4 +1,5 @@
 """SQLite metadata, migrations, and inter-process locking."""
+
 import fcntl
 import os
 import sqlite3

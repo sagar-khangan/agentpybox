@@ -1,4 +1,5 @@
 """Public data types for AgentHaven."""
+
 from dataclasses import asdict, dataclass
 from typing import Any
 
